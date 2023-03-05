@@ -1,0 +1,122 @@
+= List of Tokens
+Felix Knorr
+:toc: left
+:icons: font
+
+This file contains all the relevant tokens in Leviscript. 
+
+== Misc
+
+* Symbol
+* Typename
+* Newline
+* EscapedNewline
+* NumLit - there are ints, decimals, and e-notation literals. Also they can
+  have - prefixes
+* BoolLit
+* KeywordLit
+* UnitLit
+* operator
+* DollarSymbol
+* DollarNumber
+* ParenOps
+* ParenPrefix
+* ParenPostfix
+* StrLitPart
+* EscapedChar
+* \__magic
+
+== Symbols
+
+* comma
+* colon
+* dot
+* Eq
+* double-dot
+* at
+* bar
+* semicolon
+* arrow
+* fpipe
+* starpipe
+* questionmark
+* double-colon
+* starPrefix
+* DollarLinemagic
+* DollarStar
+* bangPrefix
+* bangPostfix
+* atPostfix
+* atBangPostfix
+
+* captureErr
+* captureOut
+* captureBoth
+
+* pipeOut
+* pipeErr
+* pipeBoth
+
+* AmpPrefix
+
+== Keywords
+
+* let
+* type
+* record
+* mod
+* recordmod
+* with
+* without
+* newtype
+* fn
+* fne
+* fna
+* restrict
+* to
+* if
+* then
+* else
+* try
+* and
+* or
+* not
+* match
+* raise
+* infix
+* prefix
+* postfix
+* OUT, IN, ERR, NULL
+* LINE, FILE
+* import
+* in
+* as
+* open
+* exception
+
+== Scopes
+
+* OpenBracket, ClosingBracket
+* OpenParen, ClosingParen
+* OpenBrace, ClosingBrace
+* StrStart - `'` or '"' StrEnd
+* RStrStart RStrEnd
+* DStrStart DStrEnd
+* DRStrStart DRStrEnd
+* StrSubExprStart, End
+* ListStart, End
+* SetStart, End
+* DictStart, End
+* recStart, End
+* f-expr-start, end
+* x-expr-start, end
+* amp-x-expr-start, end
+* g-expr-start, end
+
+* APMain - only in module scope
+* APOptions
+* APAll
+* APMode
+* APFmode
+* APFModeDefault
+* APFlags

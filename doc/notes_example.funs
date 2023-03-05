@@ -1,0 +1,47 @@
+#! /usr/bin/env funs
+
+let notes_dir = parent FILE / "../../notes"  # could add |> realpath here
+
+main query:  # query is a list
+  flags:
+    -rg 'search through files'
+    -n 'create a new file'
+    -s 'show a file in the browser'
+= {
+  let joinedQuery = join query ' '
+  if n > 0 editFile joinedQuery
+  else if rg > 0 searchInFile joinedQuery |> editFile
+  else if s > 0 selectFile joinedQuery |> showFile joinedQuery
+  else selectFile joinedQuery |> editFile joinedQuery
+}
+
+fn editFile name = withCwd notes_dir { if (not empty name) nvim name }
+
+#{ alternatively:
+
+  fn editFile "" = nil
+  fn editFile name = withCwd notes_dir f{ nvim name }
+}
+
+fn searchInFile pattern = {
+  let file = x{
+    rg -S -l $pattern $notes_dir 
+    | fzf --preview "rg -SL --color always $pattern {}"}}@
+  editFile file
+  # having the last line like this: | f{ editFile cat! } 
+  # does not work, because then stdin of vim is piped
+}
+ 
+fn selectFile pattern = withCwd notes_dir f{
+  let bonus_args = if (not empty pattern) ["-q", pattern] else []
+  ls | x{fzf --preview 'bat {} --color always' $*bonus_args}
+}
+
+fn showFile name = if (exists name) withTmpPath |p| {
+  x{ pandoc $name
+      -c ~/.local/share/scripts/pandoc.css
+      --embed-resources --standalone
+      --toc
+      -so $p }
+  firefox p
+}

@@ -1,0 +1,1294 @@
+= Leviscript: Language Specification
+Felix Knorr
+:toc: left
+:icons: font
+
+Fun is a Scripting language intended for replacing Bash scripts.
+It's named Fun because it's functional, fun to write, and funscript was already
+taken. Fun is statically typed, and completely immutable. It is largely
+expression based. Scripts are executed top to bottom, however, functions are
+reordered, so that it is not neccessary to define a function above the first
+usage.
+
+Fun tries to improve bash-scripting by beeing easier, checked, more concise and
+more readable. However, it does wan't to make life easy for the writer, and has
+a good portion of "Quick and Dirty" mentality. It tries to make large and
+complicated scripts easy, but it does not aim to be a programming language you
+write your next webserver in. As such, it is missing a couple of features that
+would have been complicated to implement, and are not required for its intended
+usecase. Notable missing features to be a real applications language include:
+macros, async and multithreading, an ffi and libc bindings.
+
+== Top Level Structure
+
+At the top level, a Fun program is a list of either:
+
+A type definition::
+  which consists of one of the following
+  * a type alias
+  * an enum definition
+  * a Record definition
+
+A module related statement::
+ * define a sub-modul
+ * import a module
+ * open a module
+
+An Expression:: 
+  which is basically everything else
+
+== Comments
+
+Comments are text that is ignored by the interpreter. As soon as the parsers
+sees a `#` it ignores the rest of the line. Exceptions are within strings or 
+`x{}` blocks.
+
+Comments can also be scoped using `#{}`. Using this notation, you can have
+comments that are shorter than a line or multiline
+
+----
+echo "Hello" # World
+# The line below me, and the line above me are identical as far as the
+# interpreter is concerned
+echo "Hello"
+
+echo "Hello" #{this does not exist} "World"
+# is the same as
+echo "Hello" "World"
+
+#{
+  You can also use me to
+  write multiline comments
+
+  And btw, you dont need to write
+  echo "Hello" "World"
+  That would be super annoying, you can also go for
+  $ echo hello $world
+  or
+  x{echo hello $world} to have the comfort of bash regarding program calls
+  
+  given you have a variable named world defined
+}
+----
+
+== Expressions
+
+Expressions are usually terminated by a newline. If you want to have multiple
+expressions in one line, you can use a `;`
+
+----
+<expr1>
+<expr2>
+
+<expr3>; <expr4>;
+----
+
+if an expression is not valid by the time a new line is encountered, e.g.
+because of yet unclosed `{}`, `()`, `[]`, `""`, or `''`. The expression will be
+continued over multiple lines. 
+
+If something looks like a finished expression by the end of the line, while not
+being complete, you can use a `\` to escape the newline. 
+
+----
+let res = functionWith4Args \
+  arg1 \
+  arg2 \
+  arg3 \
+  arg4
+
+let res = (functionWith4Args
+  arg1
+  arg2
+  arg3
+  arg4)
+----
+
+the `\` must be immediately before the linebreak. A space between the `\` and
+the line break is forbidden
+
+== Variable assignments
+
+The most basic thing that can be done in any programming language is to create
+a variable. Fun uses the `let` keyword for this:
+
+----
+let myInt = 5
+let myBool = true
+let myFloat = 3.14
+let myString = "A string"
+----
+
+Variables are immutable. All of them, so there is no reassignment after
+creation, however, shadowing is allowed
+
+----
+let aString = "foo"
+let aString = "bar"
+----
+
+For everything that is not a bool or a number, references are used internally,
+however since we don't have mutability anyway, that is irrelevant to the user.
+
+A variable assignment itself is an expression that returns the value. This is
+valid:
+
+[listing]
+let a = let b = "foo"
+
+The type is infered, but could be made explicit like this:
+
+[listing]
+let actuallyAFloat: float = 4
+
+valid variable names consist of letters, numbers and `_`, however they cannot
+start with a number
+
+== Builtin Types
+
+=== Primitives
+
+Fun has the following primitive types:
+
+Int:: 
+  defined by a number `_` are allowed to make it more readable:
++
+----
+let anInt = 1_000_000
+----
++
+ints are 64bit signed. There are no unsigned ints
+
+Float:: 
+  defined by using a `.` like `5.0`. Scientific notation is allowed
+  e.g. `5e-10`. Floats are 64bit
+
+String::
+  Strings are byte arrays that are interpreted as utf-8 strings.
+  There are many features regarding strings, <<More on Strings,see below for detailts>>
+
+Bool:: `true`, `false`, what else to say?
+
+Keyword:: 
+  keywords are values that are only equal to them selves, and serve a
+  couple of special purposes. They are defined by prefixing a valid symbol with
+  a colon
++
+----
+let aKeyWord = :foo
+----
+
+():: 
+  only has one value `()`. This roughly serves the same role as nil/null in
+  many other languages.
++
+NOTE: This is not the "billion dollat mistake", as it is a
+distinct type, and the type system will make sure you cannot accidentally do
+something with a value that turns out to be ()
+
+=== More on Strings
+
+There are multiple types of string literals, as well as string interpolation.
+A simple string litera can be created either with `''` or `""`, which means,
+you can use the other one as a normal symbol within the string like this:
+`"'"` or `'"'`. Normal string literals are multiline, and support string
+interpolation.
+
+==== String Interpolation
+
+----
+let var = "world"
+echo "Hello $var"  # prints Hello world
+----
+
+it is also possible to evaluate expressions within a string:
+
+----
+echo "Hello ${"wor" + "ld"}"  # will also print Hello world
+----
+
+Every variable can always be casted to string. This will be done automatically
+in String interpolations. For more details, see <<Casting Rules>>
+
+==== Dedented Strings
+
+This code:
+
+----
+echo '
+  Hello multiline String
+    How are you?'
+----
+
+will ouput this:
+
+----
+  Hello multiline String
+    How are you?'
+----
+
+including the leading whitespaces. To remove those, you can use dedented
+strings, by prefixing the string literal with a d
+
+----
+echo d'
+  Hello multiline String
+    How are you?'
+----
+
+will ouput this:
+
+----
+Hello multiline String
+  How are you?'
+----
+
+The first line will be removed, if it is empty. Then all whitespace that is
+common to all lines will be removed.
+
+==== Raw Strings
+
+Normal strings replace a couple of standart codes, like `\n` with a newline,
+`\t` with a tab and so on. To get an actual dollar sign, you have to type `\$`
+and to get an actual backslash you have to type `\\`. This can be annoying. So
+to turn off any form of interpretation of the strings content you can use raw
+strings, by prefixing the literal with an r:
+
+----
+echo r"\$\n\t"  # prints \$\n\t
+----
+
+Raw strings and dedent strings are allowed togethern both `rd` and `dr` as
+prefix are fine
+
+=== Containers
+
+Fun has a couple of container types built in:
+
+* List
+* Vector
+* Set
+* Dict / open Dict
+
+==== Lists
+
+Lists are singly linked lists, and the most common container type. They can be
+constructed like this:
+
+----
+let myList = [1, 2, 3]
+let myList = 0 :: myList  # myList == [0, 1, 2, 3]
+----
+
+All list elements must have the same type, however, <<Type Unions>> and 
+<<Open Records>> provide runtime polymorphism. List's are basically iterators,
+and the main function you use with them are typically <<map>>, <<filter>> and
+<<fold>>. However there are a couple more functions. See <<Functions for
+Containers>> for more details.
+
+The `in` keyword is available to check whether a list contains an item, however
+this check will be slow on lists, and if a lookup is repeated often, it's
+adviced to use a set instead
+
+==== Sets
+
+Sets are sets in the mathematical sense. They cannot contain duplicates and are
+optimized for look ups. For sets, there are operators available to compute
+unions (|), intersections (&), differences (-) and the set xor(%) (which means
+union - the intersection). Additionally there are the following functions:
+insert, remove, isSubset, isSuperset and areDisjoint. As well as all the
+combinatoric functions that are available for lists and vecs too.
+
+Set literals are created with `s[]`
+
+----
+let aSet = s[1, 5, 7, 1]  # will lead to the set s[1, 5, 7]
+----
+
+==== Dicts
+
+Dicts, also called Hash Maps in many languages map a key to a value. A dict can
+be created like this:
+
+----
+let aDict = d["key" = "val", "key2" = "val2"]
+----
+
+aDict has two generic type parameters: Key and value. You can have a dict from
+any type to any type, but they must be the same for all elements.
+
+==== Accessing elements
+
+You can access dict values with a .
+
+----
+let intKeys = d[5 = "five", 1 = "one"]
+echo intKeys.5  # prints five
+
+let strKeys = d["five" = 5, "six" = 6]
+echo strKeys."six"  # prints 6
+----
+
+If you have keyword keys, you can skip the colon and access them like this:
+
+----
+let aKWDict = d[:foo = "foo", :bar = "bar"]
+echo aKWDict.foo  # prints foo
+----
+
+if you want to access a dict member by a value that is stored in a variable,
+you have to use the `[]` operator.
+
+----
+let aDict = d["foo" = "bar"]
+let key = "foo"
+echo aDict[key]  # prints bar
+----
+
+You can use floats as dict keys, even though thats a bad idea. However, you
+cannot use the `.` with float literals, you have to use the `[]` operator then.
+
+If you try to access a dict key that is not there, the dict will throw an
+exception. To get around that you can use the getDefault function, or the
+getUnit function, which will return `()` when a value is missing.
+
+==== Container Functions
+
+all container functions that work on the other container types also work on
+dicts, however, they will always receive a (key, value) tuple as element
+
+== The Type System
+
+You'll be able to cover a lot with the given types but sometimes, you'll want
+to create your own types. Also there are some things, which are everywhere,
+that need detailed explanation, like Type Unions, newtypes, the ? - operator,
+tuples, generics, the Any type and casting rules.
+
+=== Type Synonyms
+
+you can create a synonym for a type like this:
+
+[listing]
+type ShortName = SuperDuperLongName
+
+this will only be a synonym, everywhere you write ShortName, you might as
+well have written SuperDuperLongName. This might currently not seem super
+usefull, but it will be, combined with other features, like generics, type
+unions or records.
+
+=== Records
+
+==== Creating Records
+
+Records are what is called a Struct in most languages. However they are not
+mutable, so they are pretty similar to Pythons named tuples. A record can be
+defined like that
+
+[listing]
+let myRec = r(<fieldname> = <value>, <fieldname2> = <value2> #{ ... and so on }) 
+
+this record will have the type `r(<fieldname>: <value-type>, <fieldname2>:
+<value2-type)`. 
+
+==== Defining Records
+
+If you want to use a certain record type multiple times, you
+can define a type synonym for it like this:
+
+[listing]
+type MyRec = r(<fieldname>: <value-type>, <fieldname2>: <value2-type)
+
+this will only match records of exactly this type. Btw, field name order
+doesn't matter. If you want a function to accept all records that can fullfill
+this type, add ... to its end like this:
+
+[listing]
+type MyRec = r(<fieldname>: <value-type>, <fieldname2>: <value2-type, ...)
+
+now functions that accept MyRec will accept all records that have fields with
+matching names and types. More fields don't hurt though.
+
+Because it's anoying to type out record field names all the time when creating
+one, there is also the record keyword, which you can use to define a record:
+
+----
+record MyRecord {
+  <fieldname>: <typename>
+}
+----
+
+this will define your type `MyRecord` as well as `MyRecordOpen` and a function
+`myRecord` which takes the fields as arguments in order of definitions.
+You might want to wrap that in a module:
+
+----
+mod MyRecord {
+  # let's call it T, because it's in the module anyway and that's shorter
+  record T {
+    <fieldname>: <typename>
+  }
+}
+----
+
+and because that's a good idea there is a keyword that does that automatically
+
+----
+recordmod MyRecord {
+  <fieldname>: <typename>
+}
+----
+
+this will define a type synonym for a closed record named `T` a synonym
+for the open Record named `OpenT` and a function to create it named `new`
+
+==== Updating Records
+
+You can create a new record from an existing one with the `with` keyword
+
+----
+let a = r(foo = "bar")
+echo a.foo  # bar
+
+let a = a with r(foo = "bar bar")
+echo a.foo  # bar bar
+
+let b = a with r(baz: "qox")
+echo "${b.foo} ${b.baz}"  # bar bar qox
+----
+
+as you see you can use it too change the value of an existing field or, or add
+new fields
+
+you can use `without` to create a new record which misses some fields:
+
+----
+# b from above
+let c = b without foo baz
+echo c.foo  # compiler error
+----
+
+just add the fieldnames separated by spaces after without.
+
+.The Update operator
+If you want to update a record value by processing it's value through a
+function, you can use the update-operator (@) like this:
+
+----
+let recA = r(foo = 1)
+fn add1 x = x + 1
+let recB = recA.foo @ add1
+echo recB  # prints 2
+----
+
+=== Type Unions
+
+Type Unions are a way to express that a type can be either a or b, e.g.
+
+----
+let aVal = if <expr> 5 else "five"
+----
+
+here `aVal` may end up as an Int or a String, which is expressed as `Int |
+String`. This way you can get multiple types into a list:
+
+----
+let myList = [1, "one", "5", "seven", 1000]
+for myList foo
+----
+
+This requires foo to be overloaded for Strings and Ints to work. Together with
+newtypes, this is roughly equivalent to algebraic datatypes, but it's less
+ceremony.
+
+You can also use a <<match statement>> to handle a typeunion without defining a
+function.
+
+=== The Unit Union
+
+You can postfix any type with a `?` as a shortcut for `x | ()`. This is usefull
+for functions that might fail. 
+
+=== New Types
+
+Want some things that are basically the same type, but incompatible? `newtype`
+is your friend.
+
+----
+newtype Euro = Float
+newtype Dollar = Float
+
+let aEuro: Euro = 1.0
+let aDollar: Dollar = 1.0
+
+print (aEuro + aDollar)  # Error: No instance of (+) defined for (Euro, Dollar)
+----
+
+You can also use `newtype` to overload functions or have separate match arms.
+And of course a newtype can also be a tuple.
+
+A newtype can be converted too and from it's origin type, as well as all other
+newtypes that have the same origin type. However no such conversion will happen
+implicitely.
+
+----
+let aEuro = 1: Euro
+let aOne = aEuro: Int
+let aDollar = aEuro: Int
+
+fn onlyForDollar x: Dollar = print x
+onlyForDollar aEuro  # Error: no implicit conversions between compatible newtypes
+----
+
+=== Tuples
+
+Tuples are a simple way to compose multiple values. 
+
+----
+let aTuple = (1, "One")  # type: (Int, String)
+let anotherTuple = (5, 5.0, "five")  # type: (Int, Float, String)
+----
+
+tuples can have any length. You can access their elements either by the dot
+operator or by pattern matching:
+
+----
+let (anInt, aString) = aTuple
+print anInt  # prints 1
+print aString  # prints "One"
+print anotherTuple.2  # prints "five"
+----
+
+=== Generics
+
+==== Generic Types
+
+Generics save us from writing the same code multiple times. They can be applied
+to functions and types, specifically to type, newtype and records and values.
+
+----
+type Vec3[T] = (T, T, T)
+newtype Point3D[T] = Vec3[T]
+record MyRec[T] {
+  aField: T
+}
+----
+
+==== Generic Functions
+
+They are automatically applied to functions, if you don't define an argument
+type
+
+----
+fn aFunc argA argB argC = ...
+----
+
+is equivalent to:
+
+----
+fn aFunc[T1, T2, T3] argA: T1 argB: T2 argC: T3 = ...
+----
+
+you only need to specify generic arguments for functions if you want to express
+relations between the arguments and/or the return type:
+
+----
+fn aFunc[T] argA: T argB: T = ...
+----
+
+==== Generic Values
+
+It is possible to have Generic values, this way a symbol can be defined for
+different types:
+
+----
+let default[Euro] = 100
+lef default[Dollar] = 200
+
+print (1: Dollar + default)  # prints 201: Dollar
+print (1: Euro + default)  # prints 101: Euro
+----
+
+all Instances of a generic Value must be annotated:
+
+----
+let default[Euro] = 100
+lef default[Dollar] = 200
+let default = 1  # Error: default defined with and without generics
+----
+
+=== The Any Type
+
+Sometimes you just need runtime polymorphism, for example if you want to cast a
+dict from a json string. Each key could have a different associated Value. Ok,
+I admit, you actually can express that with static types, but it's annoying,
+and for shell scripting, annoying is a nogo. Any type can be cast to Any, and
+you can attempt to cast Any to any type, the compiler will believe you.
+However, if you are wrong at runtime, your script will crash. 
+
+You can use `tryCast[T]` and `isType[T]` at runtime for some safety. The first
+will never crash, and return a `T?` meaning either a `T` or `()`. `isType[T]`
+return's whether the contained value is a `T`.
+
+=== Restricted Types
+
+You can define a new type from an existing type by restricting its domain.
+
+----
+type PositiveInt = restrict Int to 0..  # creates unsigned int semantics
+type TrafficLightColors = restrict Keyword to :Red :Green :Orange
+type ClockHours = restrict Int to 0..12
+type EvenNumbers = 0..2..
+type Chaos = restrict Any to "Chaos" false 200
+----
+
+A restricted type will be identical in memory to it's origin type, but the
+compiler will make sure to not let you assign other values than those you
+specified.
+
+=== Casting Rules
+
+Generally, Leviscript tries to cast as much automatically as possible without
+running into trouble.
+
+* Everything can implicitely be casted into bool.
+  Everything is true, except false and ()
+* Everything can be implicitely casted to string. The toString function is used
+  for that, which you can overload for your type. If you don't there will be a
+  default implementation available
+* floats and ints will be implicitely casted into each other. If it is not
+  possible to represent an int as float, the closest available value will be
+  used. A float will always be floored. To round up, use the ceil function, 
+* All containers can be casted to lists implicitely 
+* Any can be casted to anything implicitly
+* Strings will cast to byte-vectors, byte-lists and bools implicitely, but cannot be
+  casted to anything else, use the parse function for that.
+* newtypes only cast to bool and string implicitely. Note that a newtype based
+  on a bool will always cast to true, independent of it's actual value. To go
+  from a false newtype to a false bool, cast it explicitely
++
+----
+newtype Side = bool;
+let heads = true: Side
+let tails = false: Side
+
+if tails echo "true" else echo "false"  # will print true
+if tails: bool echo "true" else echo "false"  # will print false
+----
+* newtypes can be casted explicitely to and from their origin types
+* records can be casted to any compatible record type implicitly
+
+== Flow Control
+
+As Leviscript is largely functional, there are not all flow control statements
+that you might expect from imperative languages. Most notably, there are no
+loops (however, there is a for function). There still are a few though.
+
+=== if
+
+`if` is an expression, i.e. it evaluates to a value. The syntax is:
+
+----
+if <pred-expr> <then-expr> [else <else-expr>]
+----
+
+you might need paranthesis to make clear where `pred-expr` ends, and
+`<then-expr>` starts.
+
+If the type of `then-expr` and `else-expr` don't match, the type of if will be
+`then-expr-type | else-expr-type`. If you don't use a `else-expr`, the result
+type will be `then-expr-type?`
+
+The three sub expression of an if live in a new scope, so you can assign a
+value in the predicate expression, and use it in the body, and it will be gone
+after the if.
+
+----
+let result = if (let action = parse userInput) execute action
+----
+
+parse might evaluate to an action or `()`. If it evaluates to `()`, the then expr
+is not executed, and result is `()`. If it evaluates to an action, `execute` is
+executed, and the result is what ever `execute` returns
+
+==== Boolean Expression
+
+Of course, there are the typical boolean expressions: `<`, `>`, `<=`, `>=`,
+`==`, `!=`, `and`, `or` and `not`.
+
+Additionally there is `in` to check whether a value is contained in a
+container. For dicts, this works by casting the dict to a list of tuples.
+However, there are the `keys` and `values` functions to get lists over the
+dicts keys and values respectively
+
+=== match
+
+The match expression is probably the most important flow control expression in
+Leviscript. The basic syntax is
+ 
+----
+match <expr> {
+  <pattern1> -> <patternExpr1>,
+  ...
+  <patternN> -> <patternExprN>,
+}
+----
+
+The interessting part is the `<pattern>` here. There are a few special
+patterns:
+
+- lists: `[elem, tail ...]`, `[init ..., last]`, `[first, middle ..., last]`
+  sub expressions should be matchable too. What happens on match fail depends
+  on context. Also `[a, b, c]` is fine, and `[]` obviously too
+- sets are only matchable with literals, to see if they're contained, or as
+  emty
+- dicts: `d[ key: val, ... ]`, `d[ "foo": foo_val, :kw ]` the second form binds
+  the value of the key `:kw` to the variable kw
+- records:
+    - `r(field: int, field2 = "foo")` matches a record exactly
+    - `r(field: int, ...)` matches any record that has a field named field of
+      type int
+    - `r(field, ...): r(field: string, field2: int)` matches only the specified
+      record type and only binds the field val
+- additionally you can do `<identidier_name>: <type_name>` to simply match a
+  certain type
+
+=== try
+
+```
+try <expr> [finally <expr>]
+```
+
+there is no catch block, because using try will modify the expression result to
+be `<exprResultType> | <PossibleExceptionTypes>`
+
+You can use the `raise` keyword to trigger an exception. You can raise any
+value, which will then be wrappen in an Exception, which you can match.
+
+----
+newtype FileNotFound = String
+newtype NotInitiated = ()
+
+fn someFunc = {
+  ...
+  raise (): NotInitiated
+  ...
+  raise "Couldn't Find: $file": FileNotFound
+  ...
+}
+
+...
+
+match try someFunc() {
+  Exception file: FileNotFound -> reportFileNotFound file
+  Exception (): NotInitiated -> {echo "You forgot to initiate"; exit 1}
+  result -> doSomething result
+}
+----
+
+=== Pipes
+
+There are two kind of pipes:
+
+- | pipes the stdout of its left operand to stdin of its right operand
+- |> pipes the result part of the return value to the argument of it's right
+  operand
+- |> only works with function that have one operand, so we add |*> to splice
+  the tuple or the list on the left to the function on the right
+- |> and |*> abort on (). Their return type is either <lastExprType> or 
+  <lastExprType>? depending on whether any function in the pipe returns ()
+
+== Functions
+
+Functions are the basic unit of execution. They can be overloaded, also bei
+return value. Argument and return types will be infered automatically, but they
+can also be specified explicitely.
+
+Functions can be defined via the `fn` keyword.
+
+`fn <functionName> [arguments ...] = <expr>`
+
+It's also possible to define mutliple function variants for different argument
+values. This works like a match statement. Additionally, function arguments can
+be match patterns:
+
+----
+fn map [] f = []
+fn map (head :: tail) f = f head :: map tail f
+----
+
+If a function is tail-recursive, that will be detected, and tail call
+optimization will be applied.
+
+=== Varargs
+
+A function can be made to accept any number of arguments. If you prefix the
+last argument of a function with a `*`, then it will be a list of all aruments,
+from this position on. The lists element type will be the unit of the types of
+the arguments that end up in the list
+
+----
+fn printLines head *lines = {echo "Title: $head"; for lines f{ echo $1 }}
+----
+
+=== Lambda syntax
+
+There are two different syntaxes to define anonymous functions: explicit and
+implicit lambdas. Explicit lambdas allow you to define the arguments, and are
+defined via the `fna` keyword: `fna <arguments> = <body-expr>`. Implicit
+lambdas are defined like this: `f{<body-expr>}` they are named implicit,
+because you dont define arguments here. You can access the function arguments
+via `$<n>` like in a bash function. Note, that the first argument is `$1`.
+There is no `$0` and not `$@`. However, there is `$*`, which represents the
+varargs part.
+
+If you just use `$3`. The function is assumed to have 3 arguments of which only
+the last is used. `$*` will be applied to all arguments after the last used
+`$<n>` argument.
+
+=== Streams
+
+A function, like a program call, has stin, stdout and stderr streams that can
+be redirected. For more details see <<Stream Redirection>>
+
+=== Exceptions
+
+As already mentioned in the section about <<try>> expressions, functions can
+throw exceptions, that will immediately unwind the stack, until it runs into a
+`try`.
+
+The problem that arises here, is that any function could at any point crash
+your program, if you miss an exception, which is usually only communicated in
+the documentation. In Leviscript, every functions knows what kind of exceptions
+it might raise, so the compiler can help you.
+
+If you define a no-except function by using the `fne` keyword instead of the
+`fn` keyword. The compiler will tell you, if there are unhandled exceptions in
+the function body. It's called `fne` because `[fn]e` stands for function and
+`f[ne]` stands for no except.
+
+== Splicing
+
+Whenever a list of expressions is accepted, e.g. in a container literal, or in
+a function invocation, you can use the splice operator '*' with a list to fill
+that. An example:
+
+----
+let strings = ["foo", "bar", "baz"]
+
+fn takes4Strings a b c d = echo a b c d
+takes4Strings "hello" *strings  # prints hello foo bar baz
+takes4Strings *strings "hello"  # prints foo bar baz hello 
+----
+
+This also works for tuples. For tuples the compiler can check at compile time,
+whether this will work. For lists, it will throw an exception at runtime, if
+the list does not have the right amount of elements
+
+== Operators
+
+Operators are just ordinary functions, that happen to have names made of
+symbols and be pre- post- or infix. To have an operator behave like a normal
+function surround it's name with parenthesis
+
+----
+4 + 5 == (+) 4 5
+----
+
+to define an operator use the `infix`, `prefix` or `postfix` keywords.
+
+To apply a prefix or a postfix operator, there must not be a space between the
+expression to which the operator is applied and the operator `-5` is minus
+prefix, `- 5` is not. To apply two prefix or two postfix operators one after 
+another, parenthesis are required: `-(~varName)` because `-~varName` would 
+parse as the `-~` prefix operator.
+
+The syntax to define an infix operator is:
+
+----
+infix <precedence> (<operator>) <arg1> <arg2> = <expr>
+----
+
+alternatively you can use `infixrtol` to define an infix operator that is right
+associative.
+
+The syntax for pre- and postfix operators is the same, you just have switch
+prefix for postfix:
+
+----
+prefix <precedence> (<operator>) <arg> = <expr>
+----
+
+The precedence of prefix and postfix operators is always higher than those of
+infix operators. You just manipulate the precedence between prefix and postfix
+operators with this syntax
+
+----
+type Vec2D = r(x: float, y: float)
+
+infix 5 (+) r(x = x1, y = y1): Vec2D r(x = x2, y = y2): Vec2D = 
+  r(x = x1 + x2, y = y1 + y2)
+prefix 5 (-) r(x, y) = r(-x, -y)
+----
+
+any combination of `!@~|%^<>=-+&` can be used to define a new operator, except
+for those that are already reserved syntax like `!` as prefix or postfix, `@`
+as infix or postfix, and `*` as prefix.
+
+As pre and postfix operators both have one argument, and can be overloaded, it
+can become necessary to disambiguate them, if they are passed as functions. In
+this case the syntax is: `(prefix -)` or `(postfix -)`
+
+== Program Invocations
+
+As Leviscript is intended to be a replacement for bash scripts, the most crucial
+expression is the execution of an external program. One challange in that
+context is to make them easily accessible, and at the same time, not have them
+be ambiguous with function calls. If a program does not finish successfully, it
+will raise an Exception. If a binary cannot be found, it also does.
+
+There are 2.5 ways to execute a program:
+
+=== `!` Prefix
+
+You can prefix an expressions with `!`, in which case the expression result
+will be casted to string, and that string will be interpreted as the program
+name. 
+
+All arguments that are passed to a program invocation are then casted to
+strings:
+
+----
+let name = "leviscript"
+let binary = "echo"
+
+!binary name "is awesome"
+----
+
+=== `x{}` Expressions
+
+If you want something that is close to the original bash syntax, where what you
+type is interpreted as string, instead as a symbol, you can use x-expressions:
+
+----
+x{echo leviscript is awesome}
+----
+
+This will call echo with 3 arguments: "leviscript", "is", and "awesome". You
+can use quotes to escape spaces:
+
+----
+x{echo leviscript "is awesome"}
+----
+
+This way, echo is passed two arguments. You can use the same syntax as with
+strings to interpolate variables:
+
+----
+let name = "leviscript"
+let binary = "echo"
+
+x{$binary $name "is awesome"}
+----
+
+=== `$` Line magic
+
+`x{}` means three extra symbols as opposed to bash. If you mainly want to call
+external programs, that's a lot to ask. That's why there is the `$` line magic.
+Beginning a line with a `$` will have the same effect as wrapping the whole
+line with an x-expression.
+
+----
+let name = "leviscript"
+
+$ echo $name "is awesome"
+----
+
+you can also escape that line:
+
+----
+let name = "leviscript"
+
+$ echo $name \
+  "is awesome"
+----
+
+But at that point I would recommend to use x-expressions
+
+WARNING: You need a space after the `$` line magic and what ever follows it,
+because otherwise, it will be interpreted as the `$` prefix operator, which is
+a reserved syntax
+
+=== Exec results & Streams
+
+==== Capturing
+
+You can can capture a program's output instead of letting it print to the
+scripts streams by prefixing the call with a `<@` to capture stdout, `<!` to
+capture stderr or `<@!` to capture both. If you do so, the result of a program
+execution will be a special type, which can be implicitly casted to int, to
+access the return value. To access it's output streams (stdout and stderr) you
+can use the `@` or `!` postfix operators with the result. If you postfix the
+execution expression with a `@` or a `!` you will get the output of the program
+as string:
+
+----
+let echo_result = <@ x{echo foo bar}
+print echo_result  # prints 0
+print echo_result@  # prints foo bar
+
+let echo_result = x{echo foo bar}@
+print echo_result  # prints foo bar
+----
+
+you can also postfix a program invocation with `@!`, which will redirect stderr
+to stdout and then capture both into a single string that is returned. If the
+program fails here, it will still raise an exception. Prefix the execution with
+a `try` to prevent that.
+
+==== Redirecting
+The streams of a program can also be redirected:
+
+----
+foo @> NULL  # redirect stdout to /dev/null
+foo !> OUT # redirect stderr to stdout
+foo !@> "some_file"  # redirect both to some file
+foo <@ "some_file" #  read stdin from file
+
+foo @> NULL !> OUT  # redirect process out to /dev/null and process stderr to
+the scripts out
+----
+
+Functions also have streams, and the operators in this section can also be
+applied to functions.
+
+=== Background Processing
+
+If you use an `&` instead of a `!` as prefix, the program will be started in
+the background, and you get a BgProcessInfo, which acts similar to a future.
+You can use `isRunning` with that future and `getResult` which is overloaded,
+and takes as optional second argument a timeout. If you cast the BgProcessInfo
+to an Int, you will get the processes pid. Alternatively, you can use `&x{}`
+instead of `x{}`
+
+=== Process Environments
+
+You can manipulate the environment with which a process is started with using
+the `with` keyword. The syntax is:
+
+----
+<process-invocation> with <expr-that-evals-to-a-dict>
+----
+
+That dict will be used as the environment of the childprocess. It's type must
+be castible to Dict[String, String].
+
+== Glob Patterns
+
+Glob patterns are extremly handy. A Glob pattern is like a template for a path,
+and any path may or maynot match it. If you define a glob pattern, it will
+evaluate to a list, containing all paths that exist on the filesystems that
+match the pattern.
+
+A glob pattern is defined with a `g{}` expression. 
+
+----
+images = g{ imgs/*.png }
+----
+
+which is syntax sugar for 
+
+----
+images = glob "imgs/*.png"
+----
+
+the following special symbols are use:
+
+- `*` matches any string within the current path segment
+- `?` matches any single character
+- `**` matches any string. Using this will make the evaluation significantly
+  slower. It's handy though.
+
+you can use glob patterns within `x{}` expressions, and by extension, with the
+`$` line magic:
+
+----
+$ mv img_old/g{*.png} img_new/
+----
+
+== Environment Variables
+
+There will always be a global variable called `ENV` which contains the
+environment of the script. `ENV` is an ordinary `dict[Str, Str]`. To change the
+environment of a child process, use the `with` keyword.
+
+== Arg Parsing
+
+As arg parsing is a very common need, Leviscript provides a built in special
+syntax. There are 3 schemas, which you can use for your arguments.
+
+=== Simple Parameters Flags and Options
+
+With the following syntax, you can define a script that takes parameters, flags
+and options. 
+
+----
+# no commands
+main args d'
+    Here can optionally be a string as second arg, that is the big help str.
+
+    The first paragraph is the short help, the long help is everything.
+    Btw, this script takes any amount of arguments'.
+
+  options:
+    -p --print str d'
+      The last argument is optional, and can be a string, which 
+      will end up as help'
+    -r --repetitions int d'
+      The third arg is the type to which the arg should be casted'
+  flags:
+    -s --short d'
+      obligatory help str'
+    --long -l 'order doesn't matter'
+= {
+  # function code goes here. Flags and options are available by their long
+  # names. - will be converted to _. The value of a flag is the number of it's
+  # occurences.
+}
+
+# Two main sections aren't allowed, this is an alternative:
+main [src, target] d'
+    this is a script that want's exactly two arguments. Normal list pattern
+    matching applies'
+----
+
+The Syntax is actually not indention based. What's important is the new-lines. 
+Arguments can be variable, and will always be a string list. However, by
+using a list pattern, you can define an expected number. For Flags, you have to
+define a short and a long name, as well as a help string. The value of a flag
+will be the number of occurences. For options you have to define a type for the
+value. Leviscript will attemt a cast, and produce an error message if it fails.
+
+=== Multi Mode Scripts
+
+Alternatively, a script can have one or multiple modes:
+
+----
+all 'The whole script help string'
+  options: ...
+  flags: ...
+
+mode clone args 'mode help str'
+  options: ...
+  flags: ...
+= ...
+
+mode commit [] 'mode help str' # does not take args
+  options: ...
+  flags: ...
+= ...
+----
+
+The all section defines the helpstring for the program, as well as flags and
+options that are available in all modes. The all section cannot have a function
+body.
+
+=== Flag Modes
+
+The third option is to use modes which are flags (like Pacman, the package
+manager of Arch linux). This allows you to have a default mode, which does not
+require a flag. 
+
+The syntax is similar to modes, but you use fmode instead of mode, and you can
+define a default mode:
+
+----
+all 'A script to manage Notes'
+
+fmode default args 'Use fzf to select a node to edit'
+= ...
+
+fmode -n args 'Create a new Note'
+= ...
+
+fmode -s args 'Show selected note as html in the browser'
+  options: 
+    --browser -b str 'select browser'
+= ...
+----
+
+== Globals and more Magic
+
+there are a few global variables that are available in every script:
+
+- `ENV` the current environment
+- `ARGV` a list of strings, containing all arguments as they were passed to the
+  script, with the first argument being the executable name. You don't need to
+  use the integrated arg-parsing (although you should)
+
+And then there are a few magic words, that feel like variables but actually are
+not.
+
+- `IN`, `OUT` and `ERR` stdin, stdout and stderr of the current context. I.e.
+  of the script in the global scope, or of the function otherwise
+- `LINE` the line number in which it's used
+- `FILE` the current File's path
+
+== Modules
+
+A module is a collection of types, values, and functions (which are also
+values). You can either define a module by using the `mod` keyword like this:
+
+----
+mod cool_numbers {
+  let pi = 3.1415
+  let e = 2.718
+}
+----
+
+or you can import another script in which case it's contents will be loaded
+into a module.
+
+To access the values of a module, use the dot:
+
+----
+echo cool_numbers.pi  # prints 3.1415
+----
+
+=== Import Semantics
+
+To import a file use the `import` statement. To import a file named
+my-module.lev use `import my-module` without the `.lev` extension. To import a
+module from a folder `modules` use `import modules.my-module`.
+
+WARNING: When a module is imported, code in the global scope that is not a
+function, type or value definition, is not executed
+
+Modules are searched in the module search path. By default the module
+search-path is the directory which contains the executed script. **The current
+working directory is not part of the module search path** . You can extend the
+module search path via interpreter flags, or by setting the
+`LEVISCRIPT_MODULES` environment variable.
+
+If you have a subdirectory with modules, that subdirectory is a module that
+only contains other modules. To place further definition into the directory
+module, you can create a file named `self.lev` in the directory, which's
+content will be loaded into the directories module.
+
+=== Qualifying and opening modules
+
+By default, with import, a module needs to be fully qualified, to access it's
+content. To change the name to something shorter, you can use the `as` keyword.
+Similar to how it's done in python.
+
+There is also the possibility, to `open` a module, which will bring it's
+contents into the current namespace. If you open a module, that is not yet
+defined, it will implicitely be imported.
+
+== The Memory Model
+
+The memory model of levi script is extremely simple: It's one big stack. There
+is no heap that you need to manage, because there is no mutability. That means,
+semantically, everything is passed by value. In reality, primitive datatypes
+and newtypes of them will be passed by value, as well as type unions of
+primitive types. Everthing else will be passed by reference. There will be no
+unnecessary copies.

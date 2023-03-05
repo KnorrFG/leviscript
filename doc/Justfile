@@ -1,0 +1,14 @@
+
+doc:
+  #! /usr/bin/env bash
+  mkdir -p build
+  for f in src/*.adoc; do
+    filename=$(basename $f)
+    asciidoctor $f -o build/${filename%.*}.html
+  done
+
+mk-pdf:
+  asciidoctor-pdf src/spec.adoc -o build/leviscript-spec.pdf
+
+open:
+  firefox build/index.html

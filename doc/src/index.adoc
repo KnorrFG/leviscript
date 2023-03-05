@@ -1,0 +1,7 @@
+= Leviscript: Index
+
+Leviscript is a statically typed Scripting language that is compiled to
+bytecode, which is then interpreted by a VM. 
+
+* xref:spec.adoc[Specification]
+* xref:tokens.adoc[List of Tokens]

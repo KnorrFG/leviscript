@@ -1,0 +1,16 @@
+#! /usr/bin/env funs
+
+
+fn gitBranches = x{git branch}@ |> lines
+
+let brances = gitBranches ()
+
+if empty (s["* master", "* main"] & brances) {
+  let success = try x{git sw master} or try x{git sw main}
+  if not success raise "Couldn't switch to master" 
+}
+
+for gitBranches() f{ 
+  if not $1[0] == '*' x{ git branch -d $1 } 
+}
+

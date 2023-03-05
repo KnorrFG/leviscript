@@ -1,0 +1,2 @@
+include::index.adoc[]
+include::spec.adoc[]
