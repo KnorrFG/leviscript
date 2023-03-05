@@ -1,0 +1,4 @@
+(executable
+ (public_name leviscript)
+ (name main)
+ (libraries leviscript))
