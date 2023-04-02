@@ -1,4 +1,4 @@
 (executable
  (public_name leviscript)
  (name main)
- (libraries leviscript))
+ (libraries leviscript cmdliner stdio base))

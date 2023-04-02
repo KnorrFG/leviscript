@@ -1,4 +1,7 @@
-type token_type = 
+open! Core
+
+module TokenType = struct
+type t = 
   (* misc *)
   | Symbol of string
   | Typename of string
@@ -116,4 +119,7 @@ type token_type =
   | AmpExEnd
   | GExStart
   | GExEnd
+[@@deriving sexp]
+end
 
+let tokenize _src _src_file = [TokenType.GExStart]

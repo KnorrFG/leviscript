@@ -1,2 +1,4 @@
 (library
- (name leviscript))
+ (name leviscript)
+ (libraries core)
+ (preprocess (pps ppx_jane)))
