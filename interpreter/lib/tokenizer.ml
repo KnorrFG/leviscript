@@ -1,8 +1,10 @@
 open! Core
+open Sedlexing
 
 module TokenType = struct
 type t = 
   (* misc *)
+  | Eof
   | Symbol of string
   | Typename of string
   | Newline
@@ -94,32 +96,59 @@ type t =
   | LBrace
   | RBrace
   | StrStart
-  | StrEnd
   | RStrStart
-  | RStrEnd
   | DStrStart
-  | DStrEnd
   | DRStrStart
-  | DRStrEnd
   | StrSubExprStart
-  | StrSubExprEnd
   | ListStart
-  | ListEnd
   | SetStart
-  | SetEnd
   | DictStart
-  | DictEnd
   | RecStart
-  | RecEnd
   | FExStart
-  | FExEnd
   | XExStart
-  | XExEnd
   | AmpExStart
-  | AmpExEnd
   | GExStart
-  | GExEnd
-[@@deriving sexp]
+[@@deriving sexp, eq]
+
+let (=) = equal
 end
 
-let tokenize _src _src_file = [TokenType.GExStart]
+
+
+let digit = [%sedlex.regexp? '0' .. '9']
+
+let number = [%sedlex.regexp? Plus digit]
+
+let blank = [%sedlex.regexp? ' ' | '\t']
+
+let newline = [%sedlex.regexp? '\r' | '\n' | "\r\n"]
+
+let any_blank = [%sedlex.regexp? blank | newline]
+
+let letter = [%sedlex.regexp? 'a' .. 'z' | 'A' .. 'Z']
+
+let decimal_ascii = [%sedlex.regexp? Plus ('0' .. '9')]
+
+let octal_ascii = [%sedlex.regexp? "0o", Plus ('0' .. '7')]
+
+let hex_ascii = [%sedlex.regexp? "0x", Plus (('0' .. '9' | 'a' .. 'f' | 'A' .. 'F'))]
+
+let symbol = [%sedlex.regexp? (ll | lo), Star (ll | lu | lo | nd | pc | '\'')  ]
+
+let rec nom buf =
+  match%sedlex buf with
+  | Plus any_blank -> nom buf
+  | _ -> ()
+
+let token buf =
+  nom buf;
+  let open TokenType in
+  match%sedlex buf with
+  | eof -> Eof
+  | "x{" -> XExStart
+  | "}" -> RBrace
+  | symbol -> Symbol (Utf8.lexeme buf)
+  | _ -> assert false
+
+let tokenize buf = Sedlexing.with_tokenizer token buf
+

@@ -1,4 +1,4 @@
 (library
  (name leviscript)
- (libraries core)
- (preprocess (pps ppx_jane)))
+ (libraries core sedlex)
+ (preprocess (pps ppx_jane sedlex.ppx ppx_deriving.std)))

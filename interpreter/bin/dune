@@ -1,4 +1,5 @@
 (executable
  (public_name leviscript)
  (name main)
- (libraries leviscript cmdliner stdio base))
+ (libraries leviscript cmdliner stdio base)
+ (preprocess (pps ppx_jane sedlex.ppx)))
