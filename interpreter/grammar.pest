@@ -1,0 +1,71 @@
+file = _{ SOI ~ NEWLINE* ~ block ~ NEWLINE* ~ EOI }
+
+// ===============================================================================
+// General stuff
+// ===============================================================================
+
+// add statements later
+block = { term ~ (NEWLINE* ~ term)* }
+
+// add statement later
+term = {expression}
+expression = { x_expression }
+
+WHITESPACE = _{ " " | "\t" | "\\\n" }
+COMMENT = _{ "#" ~ (!NEWLINE ~ ANY)* }
+
+r_brace = _{ "}" }
+
+dollar = _{ "$" }
+symbol = @{ symbol_chars ~ (symbol_chars | ASCII_DIGIT)*}
+symbol_chars = { ASCII_ALPHA | "_" }
+
+// ===============================================================================
+// X Expressions
+// ===============================================================================
+
+x_expression = ${
+	xexpr_start
+
+	// as many spaces/tabs/newlines as wanted
+	~ xexpr_separator* 
+	
+	// at least one elem
+	~ xexpr_elem 
+
+  // followed by separators + another expression
+	~ (xexpr_separator+ ~ xexpr_elem)*
+
+  // more separators allowed before closing
+  ~ xexpr_separator*
+
+	~ r_brace
+}
+
+xexpr_start = _{ "x{" }
+
+// an elem is either a str without quotes, or a symbol, 
+// optionally followed by a separator
+// or later a quoted string or a sub expression
+xexpr_elem = ${ 
+    (dollar ~ symbol)
+    | xexpr_str
+}
+
+// a str must not start with a special seq ($, or ", or ${)
+// but can contain them, and must not contain a separator
+xexpr_str = @{ 
+
+  // its not a str if it start with a special char or ends the expr:
+  !(xexpr_special | r_brace) ~ ANY 
+
+  // in the str $ and other special chars are allowed, but not a }
+  ~ (!(xexpr_separator | r_brace) ~ ANY)* }
+
+// add " and ${ later
+xexpr_special = { dollar }
+
+xexpr_separator = _{ NEWLINE | WHITESPACE }
+
+
+

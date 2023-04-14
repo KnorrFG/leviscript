@@ -1,5 +1,0 @@
-(executable
- (public_name leviscript)
- (name main)
- (libraries leviscript cmdliner stdio base menhirLib ppx_import)
- (preprocess (pps ppx_import sedlex.ppx ppx_deriving.std)))

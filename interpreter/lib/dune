@@ -1,8 +1,0 @@
-(library
- (name leviscript)
- (libraries core sedlex menhirLib)
- (preprocess (pps ppx_jane sedlex.ppx ppx_deriving.std)) )
-
- (menhir 
-  (modules parser)
-  (flags --explain --inspection --table --dump))
