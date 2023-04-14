@@ -2,6 +2,8 @@ open! Core
 open Sedlexing
 open Utils
 
+open Parser
+
 exception LexingError of string
 
 let blank = [%sedlex.regexp? ' ' | '\t']
@@ -31,7 +33,6 @@ let unexpected buf =
 
 let get_token_main buf =
   nom buf;
-  let open Token in
   match%sedlex buf with
   | eof -> LtMain, Eof
   | "x{" -> LtXExHead, XExStart
@@ -40,7 +41,6 @@ let get_token_main buf =
 
 let get_token_xexpr_head buf =
   nom buf;
-  let open Token in
   match%sedlex buf with
   | '$', symbol -> LtXExTail, Symbol (Utf8.lexeme buf |> str_tail)
   | xexpr_word -> LtXExTail, StrLit(Utf8.lexeme buf)
@@ -49,7 +49,6 @@ let get_token_xexpr_head buf =
 
 let get_token_xexpr_tail buf =
   nom buf;
-  let open Token in
   match%sedlex buf with 
   | ('$', symbol) -> LtXExTail, Symbol (Utf8.lexeme buf |> str_tail)
   | xexpr_word -> LtXExTail, StrLit (Utf8.lexeme buf)
