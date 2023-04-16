@@ -1,13 +1,13 @@
 [package]
-name = "interpreter-rs"
+name = "proc-macros"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+proc-macro = true
 
 [dependencies]
-proc-macros = { path = "proc-macros"}
-anyhow = "1.0.70"
-pest = "2.5.7"
-pest_derive = "2.5.7"
 proc-macro2 = "1.0.56"
+quote = "1.0.26"
+syn = { version = "2.0.15", features = ["full"] }

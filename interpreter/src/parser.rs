@@ -48,7 +48,6 @@ fn parse_term<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Ter
 }
 
 fn parse_expression<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
-    let id = span_vec.len();
     span_vec.push(pair.as_span());
     assert!(matches!(pair.as_rule(), Rule::expression));
 
