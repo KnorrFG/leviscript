@@ -64,3 +64,22 @@ impl_compilable! { self, Block => {
     }
     Ok(res)
 }}
+
+pub fn intermediate_to_final(mut im: bytecode::Intermediate, ast: Block) -> bytecode::Final {
+    im.text.push(OpCode::Exit(0));
+    let final_opcode_sizes: Vec<_> = im.text.iter().map(|oc| oc.serialized_size()).collect();
+    let index = (0..final_opcode_sizes.len()).map(|i| final_opcode_sizes[0..i].iter().sum());
+    let final_index = index.enumerate().map(|(a, b)| (b, a)).collect();
+    let final_text = im.text.iter().flat_map(|c| c.to_bytes()).collect();
+
+    bytecode::Final {
+        text: final_text,
+        data: im.data,
+        header: bytecode::FinalHeader {
+            version: utils::get_version(),
+            ast,
+            ast_ids: im.ast_ids,
+            index: final_index,
+        },
+    }
+}

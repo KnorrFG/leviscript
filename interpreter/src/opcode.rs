@@ -8,6 +8,7 @@ pub enum OpCode {
     /// is stored, and the second usize is the index of the stack at which
     /// The vec with the arguments is stored
     Exec((DataRef, DataRef)),
+    Exit(i32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -32,6 +33,7 @@ impl OpCode {
                 a.offset_data_section_addr(offset);
                 b.offset_data_section_addr(offset);
             }
+            Exit(_) => {}
         };
     }
 }

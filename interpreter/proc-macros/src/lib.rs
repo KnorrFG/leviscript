@@ -88,6 +88,11 @@ fn generate_serialize_fn(
                 Self::#var_name(data) => {
                     let mut base = crate::utils::any_as_u8_slice(&#const_name).to_vec();
                     base.extend_from_slice(crate::utils::any_as_u8_slice(data));
+                    // everything should be at least word aligned, so if the size isn't even, the
+                    // byte repr is padded
+                    if base.len() % 2 == 1 {
+                        base.push(0);
+                    }
                     base
                 }
             },
@@ -116,9 +121,10 @@ fn generate_size_fn(variant_infos: &[(&syn::Ident, Option<&syn::Type>)]) -> Toke
     let match_body: TokenStream2 = arms.collect();
     quote! {
         pub fn serialized_size(&self) -> usize {
-            2 + match self {
+            let size_unpadded = 2 + match self {
                 #match_body
-            }
+            };
+            if size_unpadded % 2 == 1 { size_unpadded + 1 } else { size_unpadded }
         }
     }
 }
