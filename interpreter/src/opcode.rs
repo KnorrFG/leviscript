@@ -7,7 +7,33 @@ pub enum OpCode {
     /// The first usize is the index of the stack at which the executable name
     /// is stored, and the second usize is the index of the stack at which
     /// The vec with the arguments is stored
-    Exec((usize, usize)),
+    Exec((DataRef, DataRef)),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DataRef {
+    StackIdx(usize),
+    DataSectionIdx(usize),
+}
+
+impl DataRef {
+    pub fn offset_data_section_addr(&mut self, offset: usize) {
+        if let Self::DataSectionIdx(i) = self {
+            *i += offset;
+        }
+    }
+}
+
+impl OpCode {
+    pub fn offset_data_section_addr(&mut self, offset: usize) {
+        use OpCode::*;
+        match self {
+            Exec((a, b)) => {
+                a.offset_data_section_addr(offset);
+                b.offset_data_section_addr(offset);
+            }
+        };
+    }
 }
 
 #[cfg(test)]
@@ -16,7 +42,7 @@ mod tests {
 
     #[test]
     fn test_conversion() {
-        let input = OpCode::Exec((12, 14));
+        let input = OpCode::Exec((DataRef::StackIdx(12), DataRef::DataSectionIdx(14)));
         let bytes = input.to_bytes();
         let deserialized = unsafe { OpCode::from_ptr(bytes.as_ptr()) };
         assert!(deserialized == input);
@@ -24,7 +50,7 @@ mod tests {
 
     #[test]
     fn test_size() {
-        let input = OpCode::Exec((12, 14));
+        let input = OpCode::Exec((DataRef::StackIdx(12), DataRef::DataSectionIdx(14)));
         assert!(input.serialized_size() == 18);
     }
 }

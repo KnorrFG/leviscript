@@ -11,3 +11,7 @@ anyhow = "1.0.70"
 pest = "2.5.7"
 pest_derive = "2.5.7"
 proc-macro2 = "1.0.56"
+serde = { version = "1.0.160", features = ["derive"] }
+postcard = { version = "1.0.4", default-features = false, features = ["alloc", "use-std"] }
+thiserror = "1.0.40"
+derive_more = "0.99.17"
