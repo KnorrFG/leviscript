@@ -48,31 +48,31 @@ impl Intermediate {
 }
 
 impl Data {
-    pub fn get_as<'a, T: DataAs<'a>>(&'a self) -> T {
+    pub fn get_as<'a, T: DataAs<'a>>(&'a self) -> Option<T> {
         <T as DataAs>::get_as(&self)
     }
 }
 
-pub trait DataAs<'a>: std::fmt::Debug {
-    fn get_as(data: &'a Data) -> Self;
+pub trait DataAs<'a>: std::fmt::Debug + Sized {
+    fn get_as(data: &'a Data) -> Option<Self>;
 }
 
 impl<'a> DataAs<'a> for &'a str {
-    fn get_as(data: &'a Data) -> &'a str {
+    fn get_as(data: &'a Data) -> Option<&'a str> {
         if let Data::String(s) = data {
-            &s
+            Some(&s)
         } else {
-            utils::bug!("tried to get Data as &str, but it is: {:#?}", data);
+            None
         }
     }
 }
 
 impl<'a, T: DataAs<'a>> DataAs<'a> for Vec<T> {
-    fn get_as(data: &'a Data) -> Vec<T> {
+    fn get_as(data: &'a Data) -> Option<Vec<T>> {
         if let Data::Vec(vec) = data {
-            vec.iter().map(|d| d.get_as()).collect()
+            utils::sequence_option(vec.iter().map(|d| d.get_as()))
         } else {
-            utils::bug!("tried to get Data as Vec, but it is: {:#?}", data);
+            None
         }
     }
 }

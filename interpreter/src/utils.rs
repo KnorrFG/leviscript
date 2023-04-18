@@ -11,6 +11,19 @@ where
     Ok(res)
 }
 
+pub fn sequence_option<Iter, Itt, T>(results: Iter) -> Option<Vec<T>>
+where
+    Iter: IntoIterator<Item = Option<T>, IntoIter = Itt>,
+    Itt: Iterator<Item = Option<T>>,
+{
+    let mut res = vec![];
+    for r in results {
+        res.push(r?);
+    }
+
+    Some(res)
+}
+
 pub fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts((p as *const T) as *const u8, ::core::mem::size_of::<T>()) }
 }
