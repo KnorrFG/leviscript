@@ -1,2 +1,2 @@
 x{echo uaaaaa}
-x{echo $a_var}
+x{echo a_var}

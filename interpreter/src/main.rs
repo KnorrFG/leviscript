@@ -1,11 +1,23 @@
 use anyhow::Result;
-use interpreter_rs::compiler::Compilable;
-use interpreter_rs::parser::parse;
-use interpreter_rs::{compiler, vm};
+use levis::compiler::Compilable;
+use levis::parser::parse;
+use levis::{compiler, vm};
+
+use clap::Parser;
+
+use std::path::PathBuf;
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    script: PathBuf,
+}
 
 fn main() -> Result<()> {
     // let src = std::fs::read_to_string("../test-script/xexp.les")?;
-    let src = "x{ echo ababua }\nx{echo-no uahahahaha}";
+    let cli = Cli::parse();
+    let src = std::fs::read_to_string(cli.script)?;
+
     let (ast, spans) = parse(&src)?;
     let intermediate = ast.compile()?;
     let final_bc = compiler::intermediate_to_final(intermediate, ast);

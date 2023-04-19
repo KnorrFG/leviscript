@@ -72,7 +72,7 @@ pub unsafe fn exec(pc: *const u8, mem: &mut Memory) -> Result<ExecOutcome, VmErr
             let stat = process::Command::new(bin_name)
                 .args(args)
                 .status()
-                .map_err(|e| rt_err!("Executing {}: {:#?}", bin_name, e))?;
+                .map_err(|e| rt_err!("Executing {}: {}", bin_name, e))?;
             rt_assert!(stat.success(), "{} did not execute successfully", bin_name);
             Pc(pc.offset(opcode.serialized_size() as isize))
         }
@@ -81,35 +81,33 @@ pub unsafe fn exec(pc: *const u8, mem: &mut Memory) -> Result<ExecOutcome, VmErr
 }
 
 pub fn run(bc: bytecode::Final, spans: &[Span]) -> Result<i32, String> {
-    let mut memory = Memory {
+    let mut mem = Memory {
         stack: vec![],
         data: bc.data,
     };
     let mut pc = bc.text.as_ptr();
 
     use ExecOutcome::*;
-    unsafe {
-        loop {
-            match exec(pc, &mut memory) {
-                Ok(Pc(new_pc)) => {
-                    pc = new_pc;
-                }
-                Ok(ExitCode(res)) => return Ok(res),
-                Err(VmError::Runtime(msg)) => {
-                    let byte_offset = pc as usize - bc.text.as_ptr() as usize;
-                    let opcode_index = bc.header.index[&byte_offset];
-                    let ast_id = bc.header.ast_ids[opcode_index];
-
-                    return Err(format!(
-                        "Runtime error: {}",
-                        pest::error::Error::new_from_span(
-                            pest::error::ErrorVariant::<parser::Rule>::CustomError { message: msg },
-                            spans[ast_id]
-                        )
-                    ));
-                }
-                Err(e) => return Err(format!("VM-Error: {}", e)),
+    loop {
+        match unsafe { exec(pc, &mut mem) } {
+            Ok(Pc(new_pc)) => {
+                pc = new_pc;
             }
+            Ok(ExitCode(res)) => return Ok(res),
+            Err(VmError::Runtime(msg)) => {
+                let byte_offset = pc as usize - bc.text.as_ptr() as usize;
+                let opcode_index = bc.header.index[&byte_offset];
+                let ast_id = bc.header.ast_ids[opcode_index];
+
+                return Err(format!(
+                    "Runtime error: {}",
+                    pest::error::Error::new_from_span(
+                        pest::error::ErrorVariant::<parser::Rule>::CustomError { message: msg },
+                        spans[ast_id]
+                    )
+                ));
+            }
+            Err(e) => return Err(format!("VM-Error: {}", e)),
         }
     }
 }
