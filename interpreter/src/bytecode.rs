@@ -1,8 +1,23 @@
-use crate::{ast::Block, opcode::OpCode, utils};
+use crate::{
+    ast::Block,
+    opcode::{DataRef, OpCode},
+    utils,
+};
+use im::hashmap::HashMap as ImHashMap;
+use im::vector::Vector as ImVec;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Default)]
+pub type Scope = ImHashMap<String, usize>;
+pub type StackInfo = ImVec<DataInfo>;
+
+#[derive(Debug, Clone)]
+pub struct DataInfo {
+    pub dtype: DataType,
+    pub ast_id: usize,
+}
+
+#[derive(Debug, Default)]
 pub struct Intermediate {
     /// Basically the program
     pub text: Vec<OpCode>,
@@ -10,12 +25,33 @@ pub struct Intermediate {
     pub data: Vec<Data>,
     /// AST node from which the corresponding OpCode was generated
     pub ast_ids: Vec<usize>,
+    /// the size that the stack will have, after this code was executed
+    pub stack_info: StackInfo,
+    /// Represents the available symbols
+    pub scopes: Scopes,
+}
+
+#[derive(Debug, Clone)]
+pub struct Scopes {
+    /// Each Entry in the vec is a new scope, the last is the inner most one.
+    /// In a scope, there is a mapping from symbol name to stack_index at which the
+    /// corresponding variable can be found. The first scope is assumend to be the
+    /// global scope
+    pub scopes: ImVec<Scope>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Data {
     String(String),
     Vec(Vec<Data>),
+    Ref(DataRef),
+}
+
+#[derive(Debug, Clone)]
+pub enum DataType {
+    String,
+    Vec(Box<DataType>),
+    Ref(DataRef),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -37,13 +73,36 @@ pub struct Final {
 
 impl Intermediate {
     /// does Vec::append for every member. Also patches addresses so they stay correct
-    pub fn append(&mut self, other: &mut Self) {
+    /// stack_info and scopes from other are used unchanged
+    pub fn append(&mut self, mut other: Self) {
         for code in &mut other.text {
             code.offset_data_section_addr(self.data.len());
         }
-        self.text.append(&mut other.text);
-        self.data.append(&mut other.data);
-        self.ast_ids.append(&mut other.ast_ids);
+        let Self {
+            mut text,
+            mut data,
+            mut ast_ids,
+            mut stack_info,
+            mut scopes,
+        } = other;
+        self.text.append(&mut text);
+        self.data.append(&mut data);
+        self.ast_ids.append(&mut ast_ids);
+        self.stack_info = stack_info;
+        self.scopes = scopes;
+    }
+
+    /// returns index to the top most stack elem
+    pub fn stack_top_idx(&self) -> usize {
+        self.stack_info.len() - 1
+    }
+
+    pub fn with_scope_and_stack(scopes: Scopes, stack_info: StackInfo) -> Intermediate {
+        Intermediate {
+            scopes,
+            stack_info,
+            ..Intermediate::default()
+        }
     }
 }
 
@@ -67,12 +126,40 @@ impl<'a> DataAs<'a> for &'a str {
     }
 }
 
-impl<'a, T: DataAs<'a>> DataAs<'a> for Vec<T> {
-    fn get_as(data: &'a Data) -> Option<Vec<T>> {
-        if let Data::Vec(vec) = data {
-            utils::sequence_option(vec.iter().map(|d| d.get_as()))
-        } else {
-            None
+impl Default for Scopes {
+    fn default() -> Self {
+        Scopes {
+            scopes: ImVec::unit(ImHashMap::new()),
         }
+    }
+}
+
+impl Scopes {
+    pub fn open_new(&mut self) {
+        self.scopes.push_back(ImHashMap::new());
+    }
+
+    pub fn collapse_innermost(&mut self) -> Scope {
+        assert!(
+            self.scopes.len() > 1,
+            "Tried to collapse a global scope. This is a bug"
+        );
+        self.scopes.pop_back().unwrap()
+    }
+
+    pub fn add_symbol(&mut self, symbol_name: String, stack_index: usize) {
+        self.scopes
+            .back_mut()
+            .unwrap()
+            .insert(symbol_name, stack_index);
+    }
+
+    pub fn find_index_for(&self, symbol_name: &str) -> Option<usize> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(idx) = scope.get(symbol_name) {
+                return Some(*idx);
+            }
+        }
+        None
     }
 }

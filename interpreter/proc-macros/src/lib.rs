@@ -48,13 +48,15 @@ pub fn convert(tokens: TokenStream) -> TokenStream {
         .collect();
 
     let consts = generate_u16_values_for_discriminants(&const_names);
+    let get_id_fn_tokens = generate_get_id_fn(&const_names, &variant_infos);
     let serialize_tokens = generate_serialize_fn(&const_names, &variant_infos);
-    let size_tokens = generate_size_fn(&variant_infos);
+    let size_tokens = generate_size_fn(&const_names, &variant_infos);
     let from_ptr_tokens = generate_from_ptr_fn(&const_names, &variant_infos);
 
     quote! {
         #consts
         impl #enum_name {
+            #get_id_fn_tokens
             #serialize_tokens
             #size_tokens
             #from_ptr_tokens
@@ -111,20 +113,59 @@ fn generate_serialize_fn(
 
 /// generates tokens for a function that returns the serialized size of a variant
 /// which is 2 + the size of the argument type
-fn generate_size_fn(variant_infos: &[(&syn::Ident, Option<&syn::Type>)]) -> TokenStream2 {
-    let arms = variant_infos
+fn generate_size_fn(
+    const_names: &[syn::Ident],
+    variant_infos: &[(&syn::Ident, Option<&syn::Type>)],
+) -> TokenStream2 {
+    let arms_u16: TokenStream2 = const_names
         .iter()
-        .map(|(var_name, var_type)| match var_type {
-            None => quote! { #var_name => 0, },
-            Some(ty) => quote! { Self::#var_name(_) => std::mem::size_of::<#ty>(), },
-        });
-    let match_body: TokenStream2 = arms.collect();
-    quote! {
-        pub fn serialized_size(&self) -> usize {
-            let size_unpadded = 2 + match self {
-                #match_body
+        .zip(variant_infos)
+        .map(|(const_name, (_, types))| {
+            let size = match types {
+                None => quote! { 0 },
+                Some(ty) => quote! { std::mem::size_of::<#ty>() },
             };
+            quote! {
+                #const_name => #size,
+            }
+        })
+        .collect();
+
+    quote! {
+        pub fn serialized_size_of(disc: u16) -> usize {
+            let size_unpadded = 2 + match disc {
+                #arms_u16
+                other => panic!("No enum id: {}", other),
+             };
             if size_unpadded % 2 == 1 { size_unpadded + 1 } else { size_unpadded }
+        }
+
+        pub fn serialized_size(&self) -> usize {
+            Self::serialized_size_of(self.get_id())
+        }
+    }
+}
+
+fn generate_get_id_fn(
+    const_names: &[syn::Ident],
+    variant_infos: &[(&syn::Ident, Option<&syn::Type>)],
+) -> TokenStream2 {
+    let arms: TokenStream2 = const_names
+        .iter()
+        .zip(variant_infos)
+        .map(|(c_name, (var_ident, ty))| {
+            if ty.is_some() {
+                quote! { Self::#var_ident(_) => #c_name, }
+            } else {
+                quote! { Self::#var_ident => #c_name, }
+            }
+        })
+        .collect();
+    quote! {
+        pub fn get_id(&self) -> u16 {
+            match &self {
+                #arms
+            }
         }
     }
 }

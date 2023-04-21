@@ -16,3 +16,10 @@ postcard = { version = "1.0.4", default-features = false, features = ["alloc", "
 thiserror = "1.0.40"
 derive_more = "0.99.17"
 clap = { version = "4.2.3", features = ["derive"] }
+im = "15.1.0"
+enum-kinds-macros = "0.2.1"
+enum-kinds-traits = "0.1.2"
+
+
+[features]
+dev = []

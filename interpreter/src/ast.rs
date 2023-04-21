@@ -4,10 +4,10 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Block(pub usize, pub Vec<Term>);
+pub struct Block(pub usize, pub Vec<Phrase>);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum Term {
+pub enum Phrase {
     Expr(usize, Expr),
 }
 
@@ -18,6 +18,19 @@ pub enum Expr {
         args: Vec<XExprAtom>,
         id: usize,
     },
+    StrLit(usize, Vec<StrLitElem>),
+    Let {
+        id: usize,
+        symbol_name: String,
+        value_expr: Box<Expr>,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum StrLitElem {
+    PureStrLit(usize, String),
+    Symbol(usize, String),
+    SubExpr(usize, Expr),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -1,10 +1,10 @@
 use crate::{
     bytecode::{self, Data, DataAs},
-    opcode::{DataRef, OpCode},
+    opcode::{self, DataRef, OpCode},
     parser,
 };
 use pest::Span;
-use std::process;
+use std::{any::type_name, process};
 use thiserror::Error;
 
 pub struct VmState {
@@ -30,12 +30,11 @@ pub enum VmError {
 
     #[error(
         "TypeError, tried to access:\n{accessed_data:#?} \n\
-        as type {expected_type} via {data_ref:?}"
+        as type {expected_type}"
     )]
     TypeError {
         accessed_data: Data,
         expected_type: &'static str,
-        data_ref: DataRef,
     },
 
     #[error("Unexpected stack entry at {index} via {data_ref:?}: {msg}")]
@@ -44,6 +43,16 @@ pub enum VmError {
         msg: String,
         data_ref: DataRef,
     },
+
+    #[error("Unexpected Opcode at {pc:?}, expected {expected}, found:\n{found}")]
+    UnexpectedOpcode {
+        pc: *const u8,
+        expected: String,
+        found: String,
+    },
+
+    #[error("Opcode at pc is Non-executable")]
+    NonExecutableOpCode,
 }
 
 pub enum ExecOutcome {
@@ -61,14 +70,20 @@ macro_rules! rt_assert{
     };
 }
 
+macro_rules! bail{
+    ($($err:tt)*) => {
+        return Err(VmError::$($err)*);
+    };
+}
+
 pub unsafe fn exec(pc: *const u8, mem: &mut Memory) -> Result<ExecOutcome, VmError> {
     let opcode = OpCode::from_ptr(pc);
     use ExecOutcome::*;
     use OpCode::*;
     Ok(match opcode {
         Exec((bin, args)) => {
-            let bin_name = mem.get_as::<&str>(bin)?;
-            let args = mem.get_as::<Vec<&str>>(args)?;
+            let bin_name = mem.get_as::<&str>(&bin)?;
+            let args = mem.get_as::<Vec<&str>>(&args)?;
             let stat = process::Command::new(bin_name)
                 .args(args)
                 .status()
@@ -77,6 +92,33 @@ pub unsafe fn exec(pc: *const u8, mem: &mut Memory) -> Result<ExecOutcome, VmErr
             Pc(pc.offset(opcode.serialized_size() as isize))
         }
         Exit(res) => ExitCode(res),
+        DataRef(_) => return Err(VmError::NonExecutableOpCode),
+        StrCat(n) => {
+            let elems: Vec<&str> = (0..n)
+                .map(|i| {
+                    let addr = pc.offset(
+                        (opcode.serialized_size() + i * OpCode::serialized_size_of(opcode::DATAREF))
+                            as isize,
+                    );
+                    let oc = OpCode::from_ptr(addr);
+                    if let OpCode::DataRef(dref) = oc {
+                        mem.get_as::<&str>(&dref)
+                    } else {
+                        bail!(UnexpectedOpcode {
+                            pc: addr,
+                            expected: "DataRef".into(),
+                            found: format!("{:#?}", oc)
+                        });
+                    }
+                })
+                .collect::<Result<_, _>>()?;
+            mem.stack
+                .push(StackEntry::Entry(Data::String(elems.join(""))));
+            Pc(pc.offset(
+                (opcode.serialized_size() + n * OpCode::serialized_size_of(opcode::DATAREF))
+                    as isize,
+            ))
+        }
     })
 }
 
@@ -112,30 +154,60 @@ pub fn run(bc: bytecode::Final, spans: &[Span]) -> Result<i32, String> {
     }
 }
 
+pub trait FromMemory<'a>: Sized {
+    fn get_as(mem: &'a Memory, dref: &'a Data) -> Result<Self, VmError>;
+}
+
+/// get's any Datatype which has a data as, which means all primitive ones
+impl<'a, T: DataAs<'a>> FromMemory<'a> for T {
+    fn get_as(mem: &'a Memory, dref: &'a Data) -> Result<T, VmError> {
+        if let Data::Ref(dref) = dref {
+            mem.get_as(dref)
+        } else {
+            dref.get_as().ok_or_else(|| VmError::TypeError {
+                accessed_data: dref.clone(),
+                expected_type: type_name::<T>(),
+            })
+        }
+    }
+}
+
+impl<'a, T: DataAs<'a>> FromMemory<'a> for Vec<T> {
+    fn get_as(mem: &'a Memory, dref: &'a Data) -> Result<Vec<T>, VmError> {
+        match dref {
+            Data::Vec(elems) => elems
+                .iter()
+                .map(|e| <T as FromMemory>::get_as(mem, e))
+                .collect(),
+            _ => Err(VmError::TypeError {
+                accessed_data: dref.clone(),
+                expected_type: type_name::<T>(),
+            }),
+        }
+    }
+}
+
 impl Memory {
-    pub fn get_as<'a, T: DataAs<'a>>(&'a self, reference: DataRef) -> Result<T, VmError> {
+    pub fn get_as<'a, T: FromMemory<'a>>(&'a self, reference: &DataRef) -> Result<T, VmError> {
+        let data = self.resolve_ref(reference)?;
+        <T as FromMemory>::get_as(self, data)
+    }
+
+    pub fn resolve_ref(&self, dref: &DataRef) -> Result<&Data, VmError> {
         use DataRef::*;
-        let mk_type_error = |e| VmError::TypeError {
-            accessed_data: e,
-            expected_type: std::any::type_name::<T>(),
-            data_ref: reference,
-        };
-        match reference {
+        match dref {
             StackIdx(i) => {
-                if let StackEntry::Entry(e) = &self.stack[i] {
-                    e.get_as().ok_or_else(|| mk_type_error(e.clone()))
+                if let StackEntry::Entry(e) = &self.stack[*i] {
+                    Ok(e)
                 } else {
                     Err(VmError::UnexpectedStackEntry {
-                        index: i,
-                        msg: format!("Expected Entry, found {:#?}", self.stack[i]),
-                        data_ref: reference,
+                        index: *i,
+                        msg: format!("Expected Entry, found {:#?}", self.stack[*i]),
+                        data_ref: *dref,
                     })
                 }
             }
-            DataSectionIdx(i) => {
-                let e = &self.data[i];
-                e.get_as().ok_or_else(|| mk_type_error(e.clone()))
-            }
+            DataSectionIdx(i) => Ok(&self.data[*i]),
         }
     }
 }

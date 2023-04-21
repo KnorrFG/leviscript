@@ -5,11 +5,11 @@ file = _{ SOI ~ NEWLINE* ~ block ~ NEWLINE* ~ EOI }
 // ===============================================================================
 
 // add statements later
-block = { term ~ (NEWLINE* ~ term)* }
+block = { phrase ~ (NEWLINE* ~ phrase)* }
 
 // add statement later
-term = {expression}
-expression = { x_expression }
+phrase = {expression}
+expression = { x_expression | let_expr | str_lit }
 
 WHITESPACE = _{ " " | "\t" | "\\\n" }
 COMMENT = _{ "#" ~ (!NEWLINE ~ ANY)* }
@@ -17,8 +17,41 @@ COMMENT = _{ "#" ~ (!NEWLINE ~ ANY)* }
 r_brace = _{ "}" }
 
 dollar = _{ "$" }
+equal_sign = _{ "=" }
+quote = _{ "\"" }
 symbol = @{ symbol_chars ~ (symbol_chars | ASCII_DIGIT)*}
 symbol_chars = { ASCII_ALPHA | "_" }
+
+// ===============================================================================
+// Let Expressions
+// ===============================================================================
+
+let_expr = {kw_let ~ symbol ~ equal_sign ~ expression}
+kw_let = _{ "let" }
+
+// ===============================================================================
+// String literals
+// ===============================================================================
+
+str_lit = { quoted_str_lit }
+
+quoted_str_lit = ${
+	quote ~ quoted_str_lit_elem* ~ quote
+}
+
+quoted_str_lit_elem = ${
+	pure_quoted_str_lit | (dollar ~ symbol) | sub_expr
+}
+
+pure_quoted_str_lit = @{
+	quoted_char+
+}
+
+quoted_char = @{
+	(!("\"" | "$" | "\\") ~ ANY)
+	| "\\" ~ ("\"" | "$" | "\\")
+	| "\\" ~ "u" ~ (ASCII_HEX_DIGIT{2} | ASCII_HEX_DIGIT{4})
+}
 
 // ===============================================================================
 // X Expressions
@@ -68,4 +101,9 @@ xexpr_special = { dollar }
 xexpr_separator = _{ NEWLINE | WHITESPACE }
 
 
+// ===============================================================================
+// Sub expressions
+// ===============================================================================
 
+sub_expr = { sub_expr_start ~ block ~ r_brace } 
+sub_expr_start = _{ "${" }
