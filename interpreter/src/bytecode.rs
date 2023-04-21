@@ -1,7 +1,6 @@
 use crate::{
     ast::Block,
     opcode::{DataRef, OpCode},
-    utils,
 };
 use im::hashmap::HashMap as ImHashMap;
 use im::vector::Vector as ImVec;
@@ -82,8 +81,8 @@ impl Intermediate {
             mut text,
             mut data,
             mut ast_ids,
-            mut stack_info,
-            mut scopes,
+            stack_info,
+            scopes,
         } = other;
         self.text.append(&mut text);
         self.data.append(&mut data);

@@ -1,5 +1,5 @@
 use pest::error::Error;
-use pest::{Parser, Span};
+use pest::Span;
 use pest_derive::Parser;
 
 use crate::ast::*;

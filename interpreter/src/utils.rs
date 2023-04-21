@@ -40,11 +40,3 @@ pub fn get_version() -> [u16; 3] {
         .try_into()
         .expect("Invalid version string (wrong number of dots, expected two)")
 }
-
-macro_rules! bug {
-    ($msg:literal $(, $args:tt)*) => {
-       panic!(concat!("An Interpreter bug occured:\n\n", $msg) $(, $args)*);
-    };
-}
-
-pub(crate) use bug;
