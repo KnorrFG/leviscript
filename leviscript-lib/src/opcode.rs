@@ -1,9 +1,19 @@
-use proc_macros::ByteConvertible;
+//! This file defins the opcodes, and some utility types and functions.
+//! There is a lot of code gen going on here, by means of the OpCode derive-macro.
+//! I consider the macro part of this crate, even though it is technically a sub-crate.
+//! Therefore I liberally use types in the code generation, because I know they exist, instead
+//! of somehow getting them into the macro. For an independent macro crate, this would be a no-go
+//! but in this private scenario, I think it's fine. The vm::* imports are here because of the
+//! codegen, btw
+
+use proc_macros::OpCode;
 use serde::{Deserialize, Serialize};
+
+use crate::vm::*;
 
 /// Representing Opcodes, all variants must have zero or one member.
 /// This way, it's possible to simply convert between an object and it's raw representation
-#[derive(Debug, Clone, Copy, ByteConvertible, PartialEq)]
+#[derive(Debug, Clone, Copy, OpCode, PartialEq)]
 pub enum OpCode {
     /// The first usize is the index of the stack at which the executable name
     /// is stored, and the second usize is the index of the stack at which
@@ -43,24 +53,5 @@ impl OpCode {
             }
             Exit(_) | StrCat(_) => {}
         };
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_conversion() {
-        let input = OpCode::Exec((DataRef::StackIdx(12), DataRef::DataSectionIdx(14)));
-        let bytes = input.to_bytes();
-        let deserialized = unsafe { OpCode::from_ptr(bytes.as_ptr()) };
-        assert!(deserialized == input);
-    }
-
-    #[test]
-    fn test_size() {
-        let input = OpCode::Exec((DataRef::StackIdx(12), DataRef::DataSectionIdx(14)));
-        assert!(input.serialized_size() == 18);
     }
 }

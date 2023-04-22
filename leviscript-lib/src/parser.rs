@@ -1,11 +1,15 @@
 use pest::error::Error;
-use pest::Span;
 use pest_derive::Parser;
 
 use crate::ast::*;
 use crate::utils;
 
 use std::matches;
+
+pub use pest::{
+    error::{Error as PestError, ErrorVariant as PestErrVariant},
+    Parser as PestParser, Span,
+};
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]

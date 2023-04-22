@@ -13,10 +13,14 @@ use syn::{parse_macro_input, ItemEnum};
 ///
 /// This Macro generates the following:
 /// * a discriminant for each variant
+/// * A function get_id() to get from variant to discriminant
 /// * Self::to_bytes(&self) -> Vec<u8>
 /// * Self::serialized_size(&self) -> usize
-/// * unsafe Self::from_ptr(p: const * u8) -> Self
-#[proc_macro_derive(ByteConvertible)]
+/// * Self::serialized_size_of(u16) -> usize
+/// * unsafe Self::dispatch_discriminant(u16, *const u8, vm::Memory) -> *const u8
+/// * get_body!(opcode) -> body_type macro
+
+#[proc_macro_derive(OpCode)]
 pub fn convert(tokens: TokenStream) -> TokenStream {
     let input = parse_macro_input!(tokens as ItemEnum);
     let variants: Vec<_> = input.variants.iter().collect();
@@ -51,7 +55,8 @@ pub fn convert(tokens: TokenStream) -> TokenStream {
     let get_id_fn_tokens = generate_get_id_fn(&const_names, &variant_infos);
     let serialize_tokens = generate_serialize_fn(&const_names, &variant_infos);
     let size_tokens = generate_size_fn(&const_names, &variant_infos);
-    let from_ptr_tokens = generate_from_ptr_fn(&const_names, &variant_infos);
+    let dispatch_fn_tokens = generate_dispatch_discriminants_fn(&const_names);
+    let get_body_macro_tokens = generate_get_body_macro(&variant_infos);
 
     quote! {
         #consts
@@ -59,8 +64,9 @@ pub fn convert(tokens: TokenStream) -> TokenStream {
             #get_id_fn_tokens
             #serialize_tokens
             #size_tokens
-            #from_ptr_tokens
         }
+        #dispatch_fn_tokens
+        #get_body_macro_tokens
     }
     .into()
 }
@@ -170,33 +176,47 @@ fn generate_get_id_fn(
     }
 }
 
-/// generates an unsafe function that converts from a const * u8 to Self
-fn generate_from_ptr_fn(
-    const_names: &[syn::Ident],
-    variant_infos: &[(&syn::Ident, Option<&syn::Type>)],
-) -> TokenStream2 {
+fn generate_dispatch_discriminants_fn(const_names: &[syn::Ident]) -> TokenStream2 {
     let arms: TokenStream2 = const_names
         .iter()
-        .zip(variant_infos.iter())
-        .map(|(const_name, (var_name, var_type))| {
-            let rhs = if let Some(ty) = var_type {
-                quote! { Self::#var_name(*(p.offset(2) as *const #ty)), }
-            } else {
-                quote! { Self::#var_name, }
-            };
-            quote! { #const_name => #rhs }
+        .map(|const_name| {
+            let target_fn_name = ident_map(|i| format!("exec_{}", i.to_lowercase()), const_name);
+            quote! { #const_name => #target_fn_name(pc, mem), }
         })
         .collect();
     quote! {
-        pub unsafe fn from_ptr(p: *const u8) -> Self {
-            match *(p as *const u16) {
+        pub unsafe fn dispatch_discriminant(disc: u16, pc: *const u8, mem: &mut Memory) -> ExecResult {
+            match disc {
                 #arms
-                unknown => panic!("Unknown discriminant found: {}, this is a bug.", unknown),
+                _ => panic!("Unknown discriminant"),
             }
         }
     }
 }
 
+fn generate_get_body_macro(variant_infos: &[(&syn::Ident, Option<&syn::Type>)]) -> TokenStream2 {
+    let arms: TokenStream2 = variant_infos
+        .iter()
+        .filter_map(|(var_name, ty)| {
+            ty.map(|ty| {
+                quote! {
+                    (#var_name, $pc:expr) => { &*($pc as *const #ty) };
+                }
+            })
+        })
+        .collect();
+    quote! {
+        macro_rules! get_body {
+            #arms
+        }
+        pub(crate) use get_body;
+    }
+}
+
+fn ident_map(f: impl FnOnce(&str) -> String, i: &syn::Ident) -> syn::Ident {
+    syn::Ident::new(&f(&i.to_string()), i.span())
+}
+
 fn ident_to_upper(i: &syn::Ident) -> syn::Ident {
-    syn::Ident::new(&i.to_string().to_uppercase(), i.span())
+    ident_map(|s| s.to_uppercase(), i)
 }

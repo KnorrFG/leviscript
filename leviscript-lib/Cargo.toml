@@ -1,0 +1,19 @@
+[package]
+name = "leviscript-lib"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+proc-macros = { path = "proc-macros"}
+anyhow = "1.0.70"
+pest = "2.5.7"
+pest_derive = "2.5.7"
+proc-macro2 = "1.0.56"
+serde = { version = "1.0.160", features = ["derive"] }
+postcard = { version = "1.0.4", default-features = false, features = ["alloc", "use-std"] }
+thiserror = "1.0.40"
+derive_more = "0.99.17"
+im = "15.1.0"
+

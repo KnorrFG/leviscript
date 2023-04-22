@@ -1,2 +1,4 @@
-let word = "ababua"
-x{echo $word}
+let first_word = "ababua"
+let name = "Levi"
+let mystr = "$name's first word was: $first_word"
+x{echo output: $mystr}
