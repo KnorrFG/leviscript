@@ -74,9 +74,6 @@ impl Intermediate {
     /// does Vec::append for every member. Also patches addresses so they stay correct
     /// stack_info and scopes from other are used unchanged
     pub fn append(&mut self, mut other: Self) {
-        for code in &mut other.text {
-            code.offset_data_section_addr(self.data.len());
-        }
         let Self {
             mut text,
             mut data,
@@ -84,6 +81,12 @@ impl Intermediate {
             stack_info,
             scopes,
         } = other;
+        for code in &mut text {
+            code.offset_data_section_addr(self.data.len());
+        }
+        for d in &mut data {
+            d.offset_data_section_addr(self.data.len());
+        }
         self.text.append(&mut text);
         self.data.append(&mut data);
         self.ast_ids.append(&mut ast_ids);
@@ -108,6 +111,23 @@ impl Intermediate {
 impl Data {
     pub fn get_as<'a, T: DataAs<'a>>(&'a self) -> Option<T> {
         <T as DataAs>::get_as(&self)
+    }
+
+    pub fn offset_data_section_addr(&mut self, offset: usize) {
+        use Data::*;
+        match self {
+            String(_) => {}
+            Vec(ds) => {
+                for d in ds {
+                    d.offset_data_section_addr(offset);
+                }
+            }
+            Ref(r) => {
+                if let DataRef::DataSectionIdx(i) = r {
+                    *i += offset;
+                }
+            }
+        }
     }
 }
 

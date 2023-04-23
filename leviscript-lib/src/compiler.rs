@@ -70,6 +70,14 @@ impl_compilable! { Expr: self, scopes, stack_info => {
             text.push(OpCode::Exec((exe_ref, DataRef::DataSectionIdx(arg_idx))));
             ast_ids.push(*id);
             bytecode::Intermediate { text, data, ast_ids, stack_info: stack_info.clone(), scopes: scopes.clone()}
+
+            // alternative version with refs in the bytecode
+            // let exe_ref = atom_to_ref(exe)?;
+            // let args: Vec<_> = args.iter().map(|a| Ok(OpCode::DataRef(atom_to_ref(a)?))).collect::<Result<_,_>>()?;
+            // text.push(OpCode::Exec((exe_ref, args.len())));
+            // text.append(&mut args);
+            // ast_ids.push(*id);
+            // bytecode::Intermediate { text, data, ast_ids, stack_info: stack_info.clone(), scopes: scopes.clone()}
         }
         Let { id, symbol_name, value_expr } => {
             let mut value_code = value_expr.compile(scopes, stack_info)?;
@@ -150,7 +158,7 @@ pub fn intermediate_to_final(mut im: bytecode::Intermediate, ast: Block) -> byte
         header: bytecode::FinalHeader {
             version: utils::get_version(),
             ast,
-            ast_ids: im.ast_ids.clone(),
+            ast_ids: im.ast_ids,
             index: final_index,
         },
     }
