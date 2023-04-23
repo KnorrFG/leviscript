@@ -69,11 +69,11 @@ macro_rules! rt_assert{
     };
 }
 
-macro_rules! bail{
-    ($($err:tt)*) => {
-        return Err(Error::$($err)*);
-    };
-}
+// macro_rules! bail{
+//     ($($err:tt)*) => {
+//         return Err(Error::$($err)*);
+//     };
+// }
 
 macro_rules! size_of {
     ($i:ident) => {

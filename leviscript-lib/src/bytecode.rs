@@ -73,7 +73,7 @@ pub struct Final {
 impl Intermediate {
     /// does Vec::append for every member. Also patches addresses so they stay correct
     /// stack_info and scopes from other are used unchanged
-    pub fn append(&mut self, mut other: Self) {
+    pub fn append(&mut self, other: Self) {
         let Self {
             mut text,
             mut data,

@@ -354,17 +354,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "interpreter"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "crossterm",
- "leviscript-lib",
- "rustyline",
-]
-
-[[package]]
 name = "io-lifetimes"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -385,6 +374,17 @@ dependencies = [
  "io-lifetimes",
  "rustix",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "levis"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crossterm",
+ "leviscript-lib",
+ "rustyline",
 ]
 
 [[package]]
