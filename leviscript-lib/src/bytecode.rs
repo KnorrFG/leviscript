@@ -16,7 +16,7 @@ pub struct DataInfo {
     pub ast_id: usize,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Intermediate {
     /// Basically the program
     pub text: Vec<OpCode>,
@@ -160,5 +160,16 @@ impl Scopes {
             }
         }
         None
+    }
+}
+
+impl Final {
+    pub fn pc_to_index(&self, pc: *const u8) -> usize {
+        let byte_offset = pc as usize - self.text.as_ptr() as usize;
+        self.header.index[&byte_offset]
+    }
+
+    pub fn pc_to_ast_id(&self, pc: *const u8) -> usize {
+        self.header.ast_ids[self.pc_to_index(pc)]
     }
 }

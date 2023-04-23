@@ -150,7 +150,7 @@ pub fn intermediate_to_final(mut im: bytecode::Intermediate, ast: Block) -> byte
         header: bytecode::FinalHeader {
             version: utils::get_version(),
             ast,
-            ast_ids: im.ast_ids,
+            ast_ids: im.ast_ids.clone(),
             index: final_index,
         },
     }

@@ -6,14 +6,11 @@ use std::result::Result as StdResult;
 use std::{any::type_name, process};
 use thiserror::Error;
 
-pub struct VmState {
-    pub pc: *const u8,
-    pub memory: Memory,
-}
+pub type Stack = Vec<StackEntry>;
 
-pub struct Memory {
-    pub stack: Vec<StackEntry>,
-    pub data: Vec<Data>,
+pub struct Memory<'a> {
+    pub stack: Stack,
+    pub data: &'a Vec<Data>,
 }
 
 #[derive(Debug)]
@@ -123,7 +120,7 @@ pub unsafe fn exec_strcat(pc: *const u8, mem: &mut Memory) -> ExecResult {
 }
 
 pub unsafe fn exec_dataref(_: *const u8, _: &mut Memory) -> ExecResult {
-    panic!("Attempting to exec dataref")
+    Err(Error::NonExecutableOpCode)
 }
 
 pub unsafe fn exec_exit(pc: *const u8, _: &mut Memory) -> ExecResult {
@@ -164,8 +161,8 @@ impl<'a, T: DataAs<'a>> FromMemory<'a> for Vec<T> {
     }
 }
 
-impl Memory {
-    pub fn get_as<'a, T: FromMemory<'a>>(&'a self, reference: &DataRef) -> Result<T> {
+impl<'a> Memory<'a> {
+    pub fn get_as<T: FromMemory<'a>>(&'a self, reference: &DataRef) -> Result<T> {
         let data = self.resolve_ref(reference)?;
         <T as FromMemory>::get_as(self, data)
     }
@@ -186,5 +183,15 @@ impl Memory {
             }
             DataSectionIdx(i) => Ok(&self.data[*i]),
         }
+    }
+}
+
+impl std::fmt::Display for StackEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            StackEntry::FrameBorder => "FrameBorder".into(),
+            StackEntry::Entry(e) => format!("{:?}", e),
+        };
+        write!(f, "{}", s)
     }
 }

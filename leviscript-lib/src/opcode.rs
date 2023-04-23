@@ -1,5 +1,5 @@
-//! This file defins the opcodes, and some utility types and functions.
-//! There is a lot of code gen going on here, by means of the OpCode derive-macro.
+//! This file defines the opcodes, and some utility types and functions.
+//! There is a lot of code gen going on here by means of the OpCode derive-macro.
 //! I consider the macro part of this crate, even though it is technically a sub-crate.
 //! Therefore I liberally use types in the code generation, because I know they exist, instead
 //! of somehow getting them into the macro. For an independent macro crate, this would be a no-go
