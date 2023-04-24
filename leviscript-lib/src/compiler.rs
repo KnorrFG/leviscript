@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::ast::*;
-use crate::bytecode::{self, Data, DataInfo, DataType, Scopes, StackInfo};
+use crate::bytecode::{self, Data, DataInfo, DataType, Scopes, StackInfo, SymbolInfo};
 use crate::opcode::{DataRef, OpCode};
 use crate::utils;
 
@@ -59,8 +59,8 @@ impl_compilable! { Expr: self, scopes, stack_info => {
                         DataRef::DataSectionIdx(data.len() - 1)
                     }
                     XExprAtom::Ref(id, name) => {
-                        let idx = scopes.find_index_for(&name).ok_or_else(|| CompilationError::UndefinedSymbol { ast_id: *id, name: name.to_string() });
-                        DataRef::StackIdx(idx?)
+                        let SymbolInfo {stack_idx, dtype: _ } = get_symbol_or_raise(scopes, name, *id)?;
+                        DataRef::StackIdx(*stack_idx)
                     }
                 });
             let exe_ref = atom_to_ref(exe)?;
@@ -70,26 +70,31 @@ impl_compilable! { Expr: self, scopes, stack_info => {
             text.push(OpCode::Exec((exe_ref, DataRef::DataSectionIdx(arg_idx))));
             ast_ids.push(*id);
             bytecode::Intermediate { text, data, ast_ids, stack_info: stack_info.clone(), scopes: scopes.clone()}
-
-            // alternative version with refs in the bytecode
-            // let exe_ref = atom_to_ref(exe)?;
-            // let args: Vec<_> = args.iter().map(|a| Ok(OpCode::DataRef(atom_to_ref(a)?))).collect::<Result<_,_>>()?;
-            // text.push(OpCode::Exec((exe_ref, args.len())));
-            // text.append(&mut args);
-            // ast_ids.push(*id);
-            // bytecode::Intermediate { text, data, ast_ids, stack_info: stack_info.clone(), scopes: scopes.clone()}
         }
         Let { id, symbol_name, value_expr } => {
-            let mut value_code = value_expr.compile(scopes, stack_info)?;
-            if !(stack_info.len() + 1 == value_code.stack_info.len()){
-                compiler_bug!(*id,
-                    "During compilation of let statement. \n\
-                    The stack size should have increase by one through the code\n\
-                    representing the rhs of the let-binding. But it didn't.\n\
-                    rhs-code:\n{:?}\n\nrhs-expr:\n{:?}", value_code, value_expr);
+            // if the child expression is a symbol, the scopes are updated.
+            // the code in the else block would work, but creates unnessessary
+            // indirection
+            if let Expr::Symbol(id, name) = value_expr.as_ref() {
+                let symbol_info = get_symbol_or_raise(scopes, name, *id)?;
+                let mut scopes = scopes.clone();
+                scopes.add_symbol_info(symbol_name.to_owned(), symbol_info.clone());
+                bytecode::Intermediate {
+                    text, data, ast_ids, stack_info: stack_info.clone(), scopes: scopes.clone()
+                }
+            } else {
+                let mut value_code = value_expr.compile(scopes, stack_info)?;
+                if !(stack_info.len() < value_code.stack_info.len()){
+                    compiler_bug!(*id,
+                        "During compilation of let statement. \n\
+                        The stack size should have increase through the code\n\
+                        representing the rhs of the let-binding. But it didn't.\n\
+                        rhs-code:\n{:#?}\n\nrhs-expr:\n{:#?}", value_code, value_expr);
+                }
+                let info = value_code.stack_info.back().unwrap();
+                value_code.scopes.add_symbol(symbol_name.clone(), value_code.stack_info.len() - 1, info.dtype.clone());
+                value_code
             }
-            value_code.scopes.add_symbol(symbol_name.clone(), value_code.stack_info.len() - 1);
-            value_code
         }
         StrLit(id, elems) => {
             let mut strcat_args = vec![];
@@ -104,13 +109,10 @@ impl_compilable! { Expr: self, scopes, stack_info => {
                         current_byte_code.data.push(Data::String(val.into()));
                     }
                     Symbol(symbol_ast_id, name) => {
-                        if let Some(i) = scopes.find_index_for(name) {
-                            strcat_args.push(DataRef::StackIdx(i));
-                        } else {
-                            compilation_error!(UndefinedSymbol { ast_id: *symbol_ast_id, name: name.into()});
-                        }
+                        let info = get_symbol_or_raise(scopes, name, *symbol_ast_id)?;
+                        strcat_args.push(DataRef::StackIdx(info.stack_idx));
                     }
-                    SubExpr(_, sub_expr ) => {
+                    Expr(_, sub_expr ) => {
                         let sub_expr_code = sub_expr.compile(&current_byte_code.scopes, &current_byte_code.stack_info)?;
                         current_byte_code.append(sub_expr_code);
                         strcat_args.push(DataRef::StackIdx(current_byte_code.stack_top_idx()));
@@ -123,6 +125,19 @@ impl_compilable! { Expr: self, scopes, stack_info => {
             }
             current_byte_code.stack_info.push_back(DataInfo{dtype: DataType::String, ast_id: *id});
             current_byte_code
+        }
+        Symbol(ast_id, name) => {
+            let symbol_info = get_symbol_or_raise(scopes, name, *ast_id)?;
+            text.push(OpCode::PushRefToStack(DataRef::StackIdx(symbol_info.stack_idx)));
+            let mut stack_info = stack_info.clone();
+            stack_info.push_back(DataInfo { dtype: DataType::Ref(Box::new(symbol_info.dtype.clone())), ast_id: *ast_id });
+            bytecode::Intermediate { text, data, ast_ids, stack_info, scopes: scopes.clone()}
+        }
+        IntLit(id, val) => {
+            text.push(OpCode::PushIntToStack(*val));
+            let mut stack_info = stack_info.clone();
+            stack_info.push_back(DataInfo { dtype: DataType::Int, ast_id: *id });
+            bytecode::Intermediate { text, data, ast_ids, stack_info, scopes: scopes.clone()}
         }
     })
 }}
@@ -161,5 +176,20 @@ pub fn intermediate_to_final(mut im: bytecode::Intermediate, ast: Block) -> byte
             ast_ids: im.ast_ids,
             index: final_index,
         },
+    }
+}
+
+fn get_symbol_or_raise<'a>(
+    scopes: &'a Scopes,
+    name: &str,
+    ast_id: usize,
+) -> Result<&'a SymbolInfo, CompilationError> {
+    if let Some(i) = scopes.find_index_for(name) {
+        Ok(i)
+    } else {
+        compilation_error!(UndefinedSymbol {
+            ast_id,
+            name: name.into()
+        });
     }
 }

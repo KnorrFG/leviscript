@@ -2,7 +2,6 @@ use std::io::{Stdout, Write};
 
 use anyhow::{anyhow, bail, Result};
 use crossterm::{self as ct, terminal};
-use leviscript_lib::bytecode::StackInfo;
 use leviscript_lib::parser::{self, PestErrVariant, PestError, Span};
 use leviscript_lib::{bytecode, opcode, vm};
 use rustyline::{error::ReadlineError, DefaultEditor};

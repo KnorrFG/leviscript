@@ -7,7 +7,13 @@ use im::vector::Vector as ImVec;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-pub type Scope = ImHashMap<String, usize>;
+#[derive(Debug, Clone)]
+pub struct SymbolInfo {
+    pub stack_idx: usize,
+    pub dtype: DataType,
+}
+
+pub type Scope = ImHashMap<String, SymbolInfo>;
 pub type StackInfo = ImVec<DataInfo>;
 
 #[derive(Debug, Clone)]
@@ -42,6 +48,7 @@ pub struct Scopes {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Data {
     String(String),
+    Int(i64),
     Vec(Vec<Data>),
     Ref(DataRef),
 }
@@ -49,8 +56,9 @@ pub enum Data {
 #[derive(Debug, Clone)]
 pub enum DataType {
     String,
+    Int,
     Vec(Box<DataType>),
-    Ref(DataRef),
+    Ref(Box<DataType>),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -116,7 +124,7 @@ impl Data {
     pub fn offset_data_section_addr(&mut self, offset: usize) {
         use Data::*;
         match self {
-            String(_) => {}
+            String(_) | Int(_) => {}
             Vec(ds) => {
                 for d in ds {
                     d.offset_data_section_addr(offset);
@@ -127,6 +135,14 @@ impl Data {
                     *i += offset;
                 }
             }
+        }
+    }
+
+    pub fn to_string(&self) -> Option<String> {
+        match self {
+            Data::String(s) => Some(s.clone()),
+            Data::Int(i) => Some(i.to_string()),
+            Data::Vec(_) | Data::Ref(_) => None,
         }
     }
 }
@@ -166,17 +182,21 @@ impl Scopes {
         self.scopes.pop_back().unwrap()
     }
 
-    pub fn add_symbol(&mut self, symbol_name: String, stack_index: usize) {
+    pub fn add_symbol(&mut self, symbol_name: String, stack_idx: usize, dtype: DataType) {
         self.scopes
             .back_mut()
             .unwrap()
-            .insert(symbol_name, stack_index);
+            .insert(symbol_name, SymbolInfo { stack_idx, dtype });
     }
 
-    pub fn find_index_for(&self, symbol_name: &str) -> Option<usize> {
+    pub fn add_symbol_info(&mut self, symbol_name: String, info: SymbolInfo) {
+        self.scopes.back_mut().unwrap().insert(symbol_name, info);
+    }
+
+    pub fn find_index_for(&self, symbol_name: &str) -> Option<&SymbolInfo> {
         for scope in self.scopes.iter().rev() {
-            if let Some(idx) = scope.get(symbol_name) {
-                return Some(*idx);
+            if let Some(info) = scope.get(symbol_name) {
+                return Some(info);
             }
         }
         None

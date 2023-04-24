@@ -24,13 +24,15 @@ pub enum Expr {
         symbol_name: String,
         value_expr: Box<Expr>,
     },
+    Symbol(usize, String),
+    IntLit(usize, i64),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum StrLitElem {
     PureStrLit(usize, String),
     Symbol(usize, String),
-    SubExpr(usize, Expr),
+    Expr(usize, Expr),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

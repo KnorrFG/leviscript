@@ -23,6 +23,11 @@ pub enum OpCode {
     StrCat(usize),
     /// Just Data that will be used by the last command that came before it
     DataRef(DataRef),
+    /// Push a Ref to another value onto the stack
+    PushRefToStack(DataRef),
+    /// Push an int to the stack
+    PushIntToStack(i64),
+    /// exits the program, returns the result
     Exit(i32),
 }
 
@@ -48,10 +53,10 @@ impl OpCode {
                 a.offset_data_section_addr(offset);
                 b.offset_data_section_addr(offset);
             }
-            DataRef(d) => {
+            DataRef(d) | PushRefToStack(d) => {
                 d.offset_data_section_addr(offset);
             }
-            Exit(_) | StrCat(_) => {}
+            Exit(_) | StrCat(_) | PushIntToStack(_) => {}
         };
     }
 }

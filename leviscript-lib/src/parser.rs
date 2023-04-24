@@ -59,8 +59,34 @@ fn parse_expression<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResu
         Rule::x_expression => parse_x_expression(child, span_vec),
         Rule::str_lit => parse_str_lit(child, span_vec),
         Rule::let_expr => parse_let_expr(child, span_vec),
+        Rule::int_lit => parse_int_lit(child, span_vec),
+        Rule::symbol => parse_symbol_expr(child, span_vec),
         _ => unreachable!(),
     }
+}
+
+fn parse_symbol_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
+    let id = span_vec.len();
+    span_vec.push(pair.as_span());
+    assert!(matches!(pair.as_rule(), Rule::symbol));
+    Ok(Expr::Symbol(id, pair.as_str().into()))
+}
+
+fn parse_int_lit<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
+    let id = span_vec.len();
+    span_vec.push(pair.as_span());
+    assert!(matches!(pair.as_rule(), Rule::int_lit));
+    let val_str = pair.as_str().replace("_", "");
+    let val = if val_str.starts_with("0x") {
+        i64::from_str_radix(&val_str[2..], 16).unwrap()
+    } else if val_str.starts_with("-0x") {
+        -i64::from_str_radix(&val_str[3..], 16).unwrap()
+    } else {
+        val_str
+            .parse::<i64>()
+            .expect(&format!("cant parse {} as i64", val_str))
+    };
+    Ok(Expr::IntLit(id, val))
 }
 
 fn parse_let_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
@@ -101,7 +127,7 @@ fn parse_str_lit_elem<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseRe
     Ok(match child.as_rule() {
         Rule::pure_quoted_str_lit => PureStrLit(id, child.as_str().into()),
         Rule::symbol => Symbol(id, child.as_str().into()),
-        Rule::sub_expr => SubExpr(id, parse_expression(child, span_vec)?),
+        Rule::expression => Expr(id, parse_expression(child, span_vec)?),
         _ => unreachable!(),
     })
 }

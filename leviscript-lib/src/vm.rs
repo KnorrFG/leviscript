@@ -69,11 +69,11 @@ macro_rules! rt_assert{
     };
 }
 
-// macro_rules! bail{
-//     ($($err:tt)*) => {
-//         return Err(Error::$($err)*);
-//     };
-// }
+macro_rules! bail{
+    ($($err:tt)*) => {
+        return Err(Error::$($err)*);
+    };
+}
 
 macro_rules! size_of {
     ($i:ident) => {
@@ -95,10 +95,17 @@ macro_rules! ok_pc {
 
 pub unsafe fn exec_exec(pc: *const u8, mem: &mut Memory) -> ExecResult {
     let (bin, args) = get_body!(Exec, pc.offset(2));
-    let bin_name = mem.get_as::<&str>(&bin)?;
-    let args = mem.get_as::<Vec<&str>>(&args)?;
-    let stat = process::Command::new(bin_name)
-        .args(args)
+    let bin_name = mem.get_as_string(mem.resolve_ref(bin)?)?;
+    let resolved_args = mem.resolve_ref(&args)?;
+    let Data::Vec(args) = resolved_args else {
+         bail!(TypeError { accessed_data: resolved_args.clone(), expected_type: "Vec"});
+    };
+    let args_as_str: Vec<String> = args
+        .iter()
+        .map(|arg| mem.get_as_string(arg))
+        .collect::<StdResult<_, _>>()?;
+    let stat = process::Command::new(&bin_name)
+        .args(&args_as_str)
         .status()
         .map_err(|e| rt_err!("Executing {}: {}", bin_name, e))?;
     rt_assert!(stat.success(), "{} did not execute successfully", bin_name);
@@ -108,10 +115,10 @@ pub unsafe fn exec_exec(pc: *const u8, mem: &mut Memory) -> ExecResult {
 pub unsafe fn exec_strcat(pc: *const u8, mem: &mut Memory) -> ExecResult {
     let n = get_body!(StrCat, pc.offset(2));
     let n_is = *n as isize;
-    let elems: Vec<&str> = (0isize..n_is)
+    let elems: Vec<String> = (0isize..n_is)
         .map(|i| {
             let addr = pc.offset(isize_of!(STRCAT) + i * isize_of!(DATAREF) + 2);
-            mem.get_as::<&str>(get_body!(DataRef, addr))
+            mem.get_as_string(mem.resolve_ref(get_body!(DataRef, addr))?)
         })
         .collect::<StdResult<_, _>>()?;
     mem.stack
@@ -126,6 +133,18 @@ pub unsafe fn exec_dataref(_: *const u8, _: &mut Memory) -> ExecResult {
 pub unsafe fn exec_exit(pc: *const u8, _: &mut Memory) -> ExecResult {
     let res = get_body!(Exit, pc.offset(2));
     Ok(ExecOutcome::ExitCode(*res))
+}
+
+pub unsafe fn exec_pushreftostack(pc: *const u8, mem: &mut Memory) -> ExecResult {
+    let idx = get_body!(PushRefToStack, pc.offset(2));
+    mem.stack.push(StackEntry::Entry(Data::Ref(*idx)));
+    ok_pc!(pc.offset(isize_of!(PUSHREFTOSTACK)))
+}
+
+pub unsafe fn exec_pushinttostack(pc: *const u8, mem: &mut Memory) -> ExecResult {
+    let idx = get_body!(PushIntToStack, pc.offset(2));
+    mem.stack.push(StackEntry::Entry(Data::Int(*idx)));
+    ok_pc!(pc.offset(isize_of!(PUSHINTTOSTACK)))
 }
 
 pub trait FromMemory<'a>: Sized {
@@ -182,6 +201,20 @@ impl<'a> Memory<'a> {
                 }
             }
             DataSectionIdx(i) => Ok(&self.data[*i]),
+        }
+    }
+
+    pub fn get_as_string(&self, data: &Data) -> Result<String> {
+        match data {
+            Data::Vec(elems) => {
+                let str_vec: Vec<String> = elems
+                    .iter()
+                    .map(|e| self.get_as_string(e))
+                    .collect::<StdResult<_, _>>()?;
+                Ok(format!("[{}]", str_vec.join(", ")))
+            }
+            Data::Ref(r) => self.get_as_string(self.resolve_ref(r)?),
+            other => Ok(other.to_string().unwrap()),
         }
     }
 }

@@ -9,7 +9,7 @@ block = { phrase ~ (NEWLINE* ~ phrase)* }
 
 // add statement later
 phrase = {expression}
-expression = { x_expression | let_expr | str_lit }
+expression = { x_expression | let_expr | str_lit | symbol | int_lit }
 
 WHITESPACE = _{ " " | "\t" | "\\\n" }
 COMMENT = _{ "#" ~ (!NEWLINE ~ ANY)* }
@@ -81,6 +81,7 @@ xexpr_start = _{ "x{" }
 // optionally followed by a separator
 // or later a quoted string or a sub expression
 xexpr_elem = ${ 
+	// sub_expr
     (dollar ~ symbol)
     | xexpr_str
 }
@@ -96,7 +97,7 @@ xexpr_str = @{
   ~ (!(xexpr_separator | r_brace) ~ ANY)* }
 
 // add " and ${ later
-xexpr_special = { dollar }
+xexpr_special = { dollar | "${" }
 
 xexpr_separator = _{ NEWLINE | WHITESPACE }
 
@@ -105,5 +106,15 @@ xexpr_separator = _{ NEWLINE | WHITESPACE }
 // Sub expressions
 // ===============================================================================
 
-sub_expr = { sub_expr_start ~ block ~ r_brace } 
+sub_expr = _{ sub_expr_start ~ expression ~ r_brace } 
 sub_expr_start = _{ "${" }
+
+
+// ===============================================================================
+// Sub expressions
+// ===============================================================================
+
+int_lit = @{ "-"? ~ (
+	("0x" ~ ASCII_HEX_DIGIT ~ (ASCII_HEX_DIGIT | "_")*)
+	| (ASCII_DIGIT ~ (ASCII_DIGIT | "_")*)
+	)}
