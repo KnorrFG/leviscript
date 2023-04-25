@@ -17,6 +17,6 @@ This is the current project structure:
   expected output
 - doc contains designs, manuals etc.
 
-[^1: [Just](https://github.com/casey/just) is a command runner. It simply
-executes the bash commands that are in the Justfile.]
+[^1]: [Just](https://github.com/casey/just) is a command runner. It simply
+    executes the bash commands that are in the Justfile.]
 
