@@ -1,15 +1,13 @@
 use thiserror::Error;
 
-use crate::ast::*;
-use crate::bytecode::{self, Data, DataInfo, DataType, Scopes, StackInfo, SymbolInfo};
-use crate::opcode::{DataRef, OpCode};
+use crate::core::*;
 use crate::utils;
 
 pub trait Compilable {
     fn compile(&self, scopes: &Scopes, stack_info: &StackInfo) -> CompilationResult;
 }
 
-pub type CompilationResult = Result<bytecode::Intermediate, CompilationError>;
+pub type CompilationResult = Result<ImByteCode, CompilationError>;
 
 #[derive(Error, Debug)]
 pub enum CompilationError {
@@ -69,7 +67,8 @@ impl_compilable! { Expr: self, scopes, stack_info => {
             data.push(Data::Vec(args));
             text.push(OpCode::Exec((exe_ref, DataRef::DataSectionIdx(arg_idx))));
             ast_ids.push(*id);
-            bytecode::Intermediate { text, data, ast_ids, stack_info: stack_info.clone(), scopes: scopes.clone()}
+            ImByteCode
+         { text, data, ast_ids, stack_info: stack_info.clone(), scopes: scopes.clone()}
         }
         Let { id, symbol_name, value_expr } => {
             // if the child expression is a symbol, the scopes are updated.
@@ -79,7 +78,8 @@ impl_compilable! { Expr: self, scopes, stack_info => {
                 let symbol_info = get_symbol_or_raise(scopes, name, *id)?;
                 let mut scopes = scopes.clone();
                 scopes.add_symbol_info(symbol_name.to_owned(), symbol_info.clone());
-                bytecode::Intermediate {
+                ImByteCode
+             {
                     text, data, ast_ids, stack_info: stack_info.clone(), scopes: scopes.clone()
                 }
             } else {
@@ -98,7 +98,8 @@ impl_compilable! { Expr: self, scopes, stack_info => {
         }
         StrLit(id, elems) => {
             let mut strcat_args = vec![];
-            let mut current_byte_code = bytecode::Intermediate {
+            let mut current_byte_code = ImByteCode
+         {
                 text, data, ast_ids, stack_info: stack_info.clone(), scopes: scopes.clone()
             };
             for elem in elems {
@@ -131,13 +132,15 @@ impl_compilable! { Expr: self, scopes, stack_info => {
             text.push(OpCode::PushRefToStack(DataRef::StackIdx(symbol_info.stack_idx)));
             let mut stack_info = stack_info.clone();
             stack_info.push_back(DataInfo { dtype: DataType::Ref(Box::new(symbol_info.dtype.clone())), ast_id: *ast_id });
-            bytecode::Intermediate { text, data, ast_ids, stack_info, scopes: scopes.clone()}
+            ImByteCode
+         { text, data, ast_ids, stack_info, scopes: scopes.clone()}
         }
         IntLit(id, val) => {
             text.push(OpCode::PushIntToStack(*val));
             let mut stack_info = stack_info.clone();
             stack_info.push_back(DataInfo { dtype: DataType::Int, ast_id: *id });
-            bytecode::Intermediate { text, data, ast_ids, stack_info, scopes: scopes.clone()}
+            ImByteCode
+         { text, data, ast_ids, stack_info, scopes: scopes.clone()}
         }
     })
 }}
@@ -151,7 +154,8 @@ impl_compilable! {  Phrase: self, scopes, stack_info  => {
 
 impl_compilable! { Block: self, scopes, stack_info => {
     let Block(_, terms) = self;
-    let mut res = bytecode::Intermediate::with_scope_and_stack(scopes.clone(), stack_info.clone());
+    let mut res = ImByteCode
+::with_scope_and_stack(scopes.clone(), stack_info.clone());
 
     for term in terms {
         let c = term.compile(&res.scopes, &res.stack_info)?;
@@ -160,17 +164,17 @@ impl_compilable! { Block: self, scopes, stack_info => {
     Ok(res)
 }}
 
-pub fn intermediate_to_final(mut im: bytecode::Intermediate, ast: Block) -> bytecode::Final {
+pub fn intermediate_to_final(mut im: ImByteCode, ast: Block) -> FinalByteCode {
     im.text.push(OpCode::Exit(0));
     let final_opcode_sizes: Vec<_> = im.text.iter().map(|oc| oc.serialized_size()).collect();
     let index = (0..final_opcode_sizes.len()).map(|i| final_opcode_sizes[0..i].iter().sum());
     let final_index = index.enumerate().map(|(a, b)| (b, a)).collect();
     let final_text = im.text.iter().flat_map(|c| c.to_bytes()).collect();
 
-    bytecode::Final {
+    FinalByteCode {
         text: final_text,
         data: im.data,
-        header: bytecode::FinalHeader {
+        header: FinalByteCodeHeader {
             version: utils::get_version(),
             ast,
             ast_ids: im.ast_ids,

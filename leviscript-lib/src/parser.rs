@@ -1,7 +1,14 @@
+//! implements parsing.
+//!
+//! This is a two-fold process. First, we use pest to generate a Parser that returns
+//! a parse tree, which is then converted into an abstract syntax tree by the [`to_ast`] function
+//! The generation of the parse tree is implemented automatically by means of a grammar (using the
+//! [`pest`] crate), which you can find in <crateroot>/grammar.pest
+
 use pest::error::Error;
 use pest_derive::Parser;
 
-use crate::ast::*;
+use crate::core::*;
 use crate::utils;
 
 use std::matches;
@@ -21,6 +28,8 @@ pub type ParseResult<T> = Result<T, Error<Rule>>;
 pub type Pair<'a> = pest::iterators::Pair<'a, Rule>;
 pub type Pairs<'a> = pest::iterators::Pairs<'a, Rule>;
 
+/// converts a [Pairs](pest::iterators::Pairs) to an [ast](core::Block)
+/// You can obtain an instance of pairs from [`LsParser::parse`]
 pub fn to_ast(mut pairs: Pairs) -> ParseResult<(Block, SpanVec)> {
     let mut span_vec = vec![];
     let block_pair = pairs.next().unwrap();

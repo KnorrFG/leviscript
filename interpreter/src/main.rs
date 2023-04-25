@@ -1,10 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
 
-use leviscript_lib::bytecode::{self, Scopes, StackInfo};
 use leviscript_lib::compiler::{self, Compilable};
 use leviscript_lib::parser::{PestErrVariant, PestError, PestParser, Span};
-use leviscript_lib::{opcode, parser, vm};
+use leviscript_lib::{core::*, parser, vm};
 
 use std::path::PathBuf;
 
@@ -82,7 +81,7 @@ fn main() -> Result<()> {
     std::process::exit(res);
 }
 
-pub fn run(bc: bytecode::Final, spans: &[Span]) -> Result<i32, String> {
+pub fn run(bc: FinalByteCode, spans: &[Span]) -> Result<i32, String> {
     let mut mem = vm::Memory {
         stack: vec![],
         data: &bc.data,
@@ -92,7 +91,7 @@ pub fn run(bc: bytecode::Final, spans: &[Span]) -> Result<i32, String> {
     use vm::ExecOutcome::*;
     loop {
         let disc_ptr = pc as *const u16;
-        match unsafe { opcode::dispatch_discriminant(*disc_ptr, pc, &mut mem) } {
+        match unsafe { OpCode::dispatch_discriminant(*disc_ptr, pc, &mut mem) } {
             Ok(Pc(new_pc)) => {
                 pc = new_pc;
             }

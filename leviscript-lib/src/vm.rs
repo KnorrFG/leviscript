@@ -1,7 +1,4 @@
-use crate::{
-    bytecode::{Data, DataAs},
-    opcode::{self, get_body, DataRef, OpCode},
-};
+use crate::core::*;
 use std::result::Result as StdResult;
 use std::{any::type_name, process};
 use thiserror::Error;
@@ -77,7 +74,7 @@ macro_rules! bail{
 
 macro_rules! size_of {
     ($i:ident) => {
-        OpCode::serialized_size_of(opcode::$i)
+        OpCode::serialized_size_of(OpCode::$i)
     };
 }
 

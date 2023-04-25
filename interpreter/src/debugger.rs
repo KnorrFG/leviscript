@@ -2,8 +2,9 @@ use std::io::{Stdout, Write};
 
 use anyhow::{anyhow, bail, Result};
 use crossterm::{self as ct, terminal};
+use leviscript_lib::core::*;
 use leviscript_lib::parser::{self, PestErrVariant, PestError, Span};
-use leviscript_lib::{bytecode, opcode, vm};
+use leviscript_lib::vm;
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 #[derive(PartialEq, Clone)]
@@ -18,8 +19,8 @@ enum UserCommand {
 }
 
 pub fn run(
-    final_bc: &bytecode::Final,
-    im_bc: &bytecode::Intermediate,
+    final_bc: &FinalByteCode,
+    im_bc: &ImByteCode,
     spans: &[Span],
     src: &str,
     stdout: &mut Stdout,
@@ -49,7 +50,7 @@ pub fn run(
             }
             Next => {
                 let disc_ptr = pc as *const u16;
-                match unsafe { opcode::dispatch_discriminant(*disc_ptr, pc, &mut mem) } {
+                match unsafe { OpCode::dispatch_discriminant(*disc_ptr, pc, &mut mem) } {
                     Ok(Pc(new_pc)) => {
                         pc = new_pc;
                     }
@@ -149,11 +150,7 @@ fn parse_show(elems: &[&str]) -> Result<UserCommand> {
     }
 }
 
-fn print_next_instruction(
-    final_bc: &bytecode::Final,
-    im_bc: &bytecode::Intermediate,
-    pc: *const u8,
-) {
+fn print_next_instruction(final_bc: &FinalByteCode, im_bc: &ImByteCode, pc: *const u8) {
     let instruction_index = final_bc.pc_to_index(pc);
     let instructions = im_bc.text.iter().enumerate();
     println!("Next instructions:");
@@ -206,8 +203,8 @@ impl Rect {
 fn render_state(
     stdout: &mut Stdout,
     mem: &vm::Memory,
-    bc_im: &bytecode::Intermediate,
-    bc_final: &bytecode::Final,
+    bc_im: &ImByteCode,
+    bc_final: &FinalByteCode,
     src: &str,
     pc: *const u8,
 ) -> Result<()> {
@@ -227,7 +224,7 @@ fn render_src(stdout: &mut Stdout, rect: &Rect, src: &str) -> Result<()> {
     Ok(())
 }
 
-fn render_data(stdout: &mut Stdout, rect: &Rect, data: &Vec<bytecode::Data>) -> Result<()> {
+fn render_data(stdout: &mut Stdout, rect: &Rect, data: &Vec<Data>) -> Result<()> {
     let lines = std::iter::once("Data:".into()).chain(
         data.iter()
             .enumerate()
@@ -257,12 +254,7 @@ fn render_stack(stdout: &mut Stdout, rect: &Rect, stack: &vm::Stack) -> Result<(
     Ok(())
 }
 
-fn render_bc(
-    stdout: &mut Stdout,
-    bc_rect: &Rect,
-    bc_im: &bytecode::Intermediate,
-    pc_idx: usize,
-) -> Result<()> {
+fn render_bc(stdout: &mut Stdout, bc_rect: &Rect, bc_im: &ImByteCode, pc_idx: usize) -> Result<()> {
     let lines = bc_im
         .text
         .iter()
