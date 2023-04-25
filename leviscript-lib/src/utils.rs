@@ -1,33 +1,11 @@
-pub fn sequence_result<Iter, Itt, T, E>(results: Iter) -> Result<Vec<T>, E>
-where
-    Iter: IntoIterator<Item = Result<T, E>, IntoIter = Itt>,
-    Itt: Iterator<Item = Result<T, E>>,
-{
-    let mut res = vec![];
-    for r in results {
-        res.push(r?);
-    }
+//! contains small utility functions that have nowhere else to go
 
-    Ok(res)
-}
-
-pub fn sequence_option<Iter, Itt, T>(results: Iter) -> Option<Vec<T>>
-where
-    Iter: IntoIterator<Item = Option<T>, IntoIter = Itt>,
-    Itt: Iterator<Item = Option<T>>,
-{
-    let mut res = vec![];
-    for r in results {
-        res.push(r?);
-    }
-
-    Some(res)
-}
-
+/// "casts" a reference to the corresponding byte-sequence
 pub fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts((p as *const T) as *const u8, ::core::mem::size_of::<T>()) }
 }
 
+/// returns the crate version
 pub fn get_version() -> [u16; 3] {
     let version_str = env!("CARGO_PKG_VERSION");
     version_str

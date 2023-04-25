@@ -1,20 +1,9 @@
+//! contains the exec functions that correspond to the [OpCode](crate::core::OpCode) variants
+
 use crate::core::*;
 use std::result::Result as StdResult;
 use std::{any::type_name, process};
 use thiserror::Error;
-
-pub type Stack = Vec<StackEntry>;
-
-pub struct Memory<'a> {
-    pub stack: Stack,
-    pub data: &'a Vec<Data>,
-}
-
-#[derive(Debug)]
-pub enum StackEntry {
-    FrameBorder,
-    Entry(Data),
-}
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -48,8 +37,11 @@ pub enum Error {
     NonExecutableOpCode,
 }
 
+/// returned by all exec_ functions
 pub enum ExecOutcome {
+    // the new value for the program counter
     Pc(*const u8),
+    // All good, script finished successfull
     ExitCode(i32),
 }
 

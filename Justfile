@@ -11,3 +11,6 @@ check project:
 
 levis *args:
     cd interpreter && RUST_BACKTRACE=1 cargo run --features dev -- {{args}}
+
+doc-lib *bonus_args:
+	cd leviscript-lib && cargo doc {{bonus_args}}

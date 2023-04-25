@@ -1,5 +1,6 @@
 use crate::core::*;
 
+/// represents byte code in a more abstract form
 #[derive(Debug, Default, Clone)]
 pub struct ImByteCode {
     /// Basically the program

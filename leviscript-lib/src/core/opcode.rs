@@ -11,7 +11,7 @@
 use proc_macros::OpCode;
 
 // this import is here to have the exec_... functions in scope
-use crate::core::DataRef;
+use crate::core::*;
 use crate::vm::*;
 
 /// Representing Opcodes, all variants must have zero or one member.

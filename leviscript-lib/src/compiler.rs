@@ -1,14 +1,22 @@
+//! handles the steps ast -> intermediate byte code -> final bytecode
+//!
+//! The compilation from ast to intermediate bytecode is handled via the Compilable trait,
+//! that is implemented by all Ast node types. The definition and implementation of this trait
+//! reside in this file.
+
 use thiserror::Error;
 
 use crate::core::*;
 use crate::utils;
 
+/// Handles first part of compilation
 pub trait Compilable {
     fn compile(&self, scopes: &Scopes, stack_info: &StackInfo) -> CompilationResult;
 }
 
 pub type CompilationResult = Result<ImByteCode, CompilationError>;
 
+/// The errors that can occur during compilation
 #[derive(Error, Debug)]
 pub enum CompilationError {
     #[error("Undefined Symbol: {name}")]
@@ -18,12 +26,14 @@ pub enum CompilationError {
     CompilerBug { ast_id: usize, msg: String },
 }
 
+/// return a compilation error immediately
 macro_rules! compilation_error {
     ($($err:tt)+) => {
         return Err(CompilationError::$($err)*);
     };
 }
 
+/// return a compiler error immediately
 macro_rules! compiler_bug {
     ($ast_id: expr, $msg:literal $(, $args: expr)*) => {
         return Err(CompilationError::CompilerBug{
@@ -32,6 +42,7 @@ macro_rules! compiler_bug {
     };
 }
 
+/// used to implement the Comilable trait for the different ast-noded, saves some boilerplate
 macro_rules! impl_compilable {
     ($t:ty: $self:ident, $scopes:ident, $stack_info:ident => $code:tt) => {
         impl Compilable for $t {

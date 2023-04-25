@@ -1,11 +1,38 @@
+//! contains all important data structures
+
 use im::Vector as ImVec;
 
+/// type that is used at runtime to represent the stack
+pub type Stack = Vec<StackEntry>;
+
+/// A stack entry can be different things, one layer of indirection
+/// for good measure
+#[derive(Debug)]
+pub enum StackEntry {
+    FrameBorder,
+    Entry(Data),
+}
+
+/// used at runtime to represent all memory
+pub struct Memory<'a> {
+    /// the stack
+    pub stack: Stack,
+    /// the data section of the byte code
+    pub data: &'a Vec<Data>,
+}
+
+/// Used at compile time to represent the stack state at runtime
+pub type StackInfo = ImVec<DataInfo>;
+
+/// Represents compile time information about a symbol. Does not contain
+/// an ast-id, because a symbol is used in many places
 #[derive(Debug, Clone)]
 pub struct SymbolInfo {
     pub stack_idx: usize,
     pub dtype: DataType,
 }
 
+/// Represents TypeInformation at compile time
 #[derive(Debug, Clone)]
 pub enum DataType {
     String,
@@ -14,12 +41,13 @@ pub enum DataType {
     Ref(Box<DataType>),
 }
 
-/// Used at compile time to represent the stack state at runtime
-pub type StackInfo = ImVec<DataInfo>;
-
+/// Holds information about data on the stack
 #[derive(Debug, Clone)]
 pub struct DataInfo {
+    /// type of the data
     pub dtype: DataType,
+    /// ast_id of the node that was responsible for the creation
+    /// of the corresponding data.
     pub ast_id: usize,
 }
 
