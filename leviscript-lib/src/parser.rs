@@ -9,7 +9,6 @@ use pest::error::Error;
 use pest_derive::Parser;
 
 use crate::core::*;
-use crate::utils;
 
 use std::matches;
 
@@ -46,7 +45,10 @@ fn parse_block<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Bl
     span_vec.push(pair.as_span());
     assert!(matches!(pair.as_rule(), Rule::block));
 
-    let phrases = utils::sequence_result(pair.into_inner().map(|p| parse_phrase(p, span_vec)))?;
+    let phrases = pair
+        .into_inner()
+        .map(|p| parse_phrase(p, span_vec))
+        .collect::<Result<_, _>>()?;
     Ok(Block(id, phrases))
 }
 
@@ -149,8 +151,10 @@ fn parse_x_expression<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseRe
     span_vec.push(pair.as_span());
     assert!(matches!(pair.as_rule(), Rule::x_expression));
 
-    let children =
-        utils::sequence_result(pair.into_inner().map(|p| parse_xexpr_atom(p, span_vec)))?;
+    let children: Vec<XExprAtom> = pair
+        .into_inner()
+        .map(|p| parse_xexpr_atom(p, span_vec))
+        .collect::<Result<_, _>>()?;
 
     Ok(Expr::XExpr {
         exe: children[0].clone(),

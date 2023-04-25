@@ -82,7 +82,7 @@ fn main() -> Result<()> {
 }
 
 pub fn run(bc: FinalByteCode, spans: &[Span]) -> Result<i32, String> {
-    let mut mem = vm::Memory {
+    let mut mem = Memory {
         stack: vec![],
         data: &bc.data,
     };
