@@ -3,7 +3,11 @@ use clap::Parser;
 
 use leviscript_lib::compiler::{self, Compilable};
 use leviscript_lib::parser::{PestErrVariant, PestError, PestParser, Span};
-use leviscript_lib::{core::*, parser, vm};
+use leviscript_lib::{
+    core::*,
+    parser,
+    vm::{self, Memory},
+};
 
 use std::path::PathBuf;
 

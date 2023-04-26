@@ -16,4 +16,6 @@ postcard = { version = "1.0.4", default-features = false, features = ["alloc", "
 thiserror = "1.0.40"
 derive_more = "0.99.17"
 im = "15.1.0"
+strum_macros = "0.24.3"
+enum_variant_macros = "0.3.0"
 

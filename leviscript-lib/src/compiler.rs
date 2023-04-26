@@ -64,7 +64,7 @@ impl_compilable! { Expr: self, scopes, stack_info => {
             let mut atom_to_ref = |a: &XExprAtom|
                 Ok(match a {
                     XExprAtom::Str(_, val) => {
-                        data.push(Data::String(val.to_owned()));
+                        data.push(val.to_owned().into());
                         DataRef::DataSectionIdx(data.len() - 1)
                     }
                     XExprAtom::Ref(id, name) => {
@@ -118,7 +118,7 @@ impl_compilable! { Expr: self, scopes, stack_info => {
                 match elem {
                     PureStrLit(_, val) => {
                         strcat_args.push(DataRef::DataSectionIdx(current_byte_code.data.len()));
-                        current_byte_code.data.push(Data::String(val.into()));
+                        current_byte_code.data.push(val.clone().into());
                     }
                     Symbol(symbol_ast_id, name) => {
                         let info = get_symbol_or_raise(scopes, name, *symbol_ast_id)?;

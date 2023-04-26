@@ -2,25 +2,6 @@
 
 use im::Vector as ImVec;
 
-/// type that is used at runtime to represent the stack
-pub type Stack = Vec<StackEntry>;
-
-/// A stack entry can be different things, one layer of indirection
-/// for good measure
-#[derive(Debug)]
-pub enum StackEntry {
-    FrameBorder,
-    Entry(Data),
-}
-
-/// used at runtime to represent all memory
-pub struct Memory<'a> {
-    /// the stack
-    pub stack: Stack,
-    /// the data section of the byte code
-    pub data: &'a Vec<Data>,
-}
-
 /// Used at compile time to represent the stack state at runtime
 pub type StackInfo = ImVec<DataInfo>;
 

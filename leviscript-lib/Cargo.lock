@@ -87,6 +87,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "enum_variant_macros"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c228468b8e699510371bcf76329131f58c72543be8062a3f967d6be43bdabaf0"
+dependencies = [
+ "enum_variant_macros_macros",
+]
+
+[[package]]
+name = "enum_variant_macros_macros"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31020c77bd64135f503b6f0ef75970ee5bbd406c7a2a61c8e9736f20fdb980bb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.15",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -95,6 +115,12 @@ dependencies = [
  "typenum",
  "version_check",
 ]
+
+[[package]]
+name = "heck"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 
 [[package]]
 name = "im"
@@ -116,6 +142,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "derive_more",
+ "enum_variant_macros",
  "im",
  "pest",
  "pest_derive",
@@ -123,6 +150,7 @@ dependencies = [
  "proc-macro2",
  "proc-macros",
  "serde",
+ "strum_macros",
  "thiserror",
 ]
 
@@ -244,6 +272,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustversion"
+version = "1.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f3208ce4d8448b3f3e7d168a73f5e0c43a61e32930de3bceeccedb388b6bf06"
+
+[[package]]
 name = "semver"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -288,6 +322,19 @@ checksum = "16d69225bde7a69b235da73377861095455d298f2b970996eec25ddbb42b3d1e"
 dependencies = [
  "bitmaps",
  "typenum",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.24.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e385be0d24f186b4ce2f9982191e7101bb737312ad61c1f2f984f34bcf85d59"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 1.0.109",
 ]
 
 [[package]]
