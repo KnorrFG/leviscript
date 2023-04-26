@@ -5,7 +5,7 @@ use std::result::Result as StdResult;
 use std::{any::type_name, process};
 use thiserror::Error;
 
-mod memory;
+pub mod memory;
 pub use memory::*;
 
 #[derive(Error, Debug)]

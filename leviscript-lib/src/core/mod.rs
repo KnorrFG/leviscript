@@ -32,20 +32,20 @@ pub struct DataInfo {
     pub ast_id: usize,
 }
 
-mod data;
+pub mod data;
 pub use data::*;
 
-mod scopes;
+pub mod scopes;
 pub use scopes::*;
 
-mod intermediate_bytecode;
+pub mod intermediate_bytecode;
 pub use intermediate_bytecode::*;
 
-mod final_bytecode;
+pub mod final_bytecode;
 pub use final_bytecode::*;
 
-mod ast;
+pub mod ast;
 pub use ast::*;
 
-mod opcode;
+pub mod opcode;
 pub use opcode::*;

@@ -5,7 +5,7 @@
 //! 1. compile the ast to intermediate bytecode using the .compile() method on the ast-node
 //!    that is implemented in the [`compiler::Compilable`] trait
 //! 1. generate the final bytecode from that by using [`compiler::intermediate_to_final`]
-//! 1. create an instance of [`core::Memory`], and create a program pointer from the final
+//! 1. create an instance of [`vm::Memory`], and create a program pointer from the final
 //!    bytecodes text field:
 //!   
 //!    ```

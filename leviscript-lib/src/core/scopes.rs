@@ -1,3 +1,5 @@
+//! contains code for scope checking during compilation
+
 use im::HashMap as ImHashMap;
 use im::Vector as ImVec;
 
