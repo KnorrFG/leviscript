@@ -5,10 +5,10 @@ use std::collections::HashMap;
 use crate::core::*;
 
 /// Represents bytecode in it's final form
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct FinalByteCode {
     pub text: Vec<u8>,
-    pub data: Vec<Data>,
+    pub data: Vec<Value>,
     pub header: FinalByteCodeHeader,
 }
 

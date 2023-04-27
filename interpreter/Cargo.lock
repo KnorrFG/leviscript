@@ -415,6 +415,7 @@ dependencies = [
  "derive_more",
  "enum_variant_macros",
  "im",
+ "once_cell",
  "pest",
  "pest_derive",
  "postcard",

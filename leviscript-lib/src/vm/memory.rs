@@ -17,32 +17,27 @@ use std::result::Result as StdResult;
 use crate::core::*;
 
 /// used at runtime to represent all memory
-pub struct Memory<'a> {
+pub struct Memory<'a, 'b> {
     /// the stack
     pub stack: Stack,
     /// the data section of the byte code
-    pub data: &'a Vec<Data>,
+    pub data: &'a Vec<Data<'b>>,
 }
 
 /// type that is used at runtime to represent the stack
-pub type Stack = Vec<StackEntry>;
+pub type Stack<'a> = Vec<StackEntry<'a>>;
 
 /// A stack entry can be different things, one layer of indirection
 /// for good measure
 #[derive(Debug)]
-pub enum StackEntry {
-    FrameBorder,
-    Entry(Data),
+pub enum StackEntry<'a> {
+    Data(Data<'a>),
+    Value(Value<'a>),
 }
 
-/// enables [`Memory::get_as`]
-pub trait GetFromMemoryAs<'a>: Sized {
-    fn get_from_mem(mem: &'a Memory<'a>, d: &'a Data) -> Result<Self>;
-}
-
-impl<'a> Memory<'a> {
+impl<'mem> Memory<'mem> {
     /// returns a &Data for a DataRef
-    pub fn deref_refobj(&'a self, dref: &DataRef) -> Result<&'a Data> {
+    pub fn deref_refobj(&'mem self, dref: &DataRef) -> Result<&'mem Data> {
         use DataRef::*;
         match dref {
             StackIdx(i) => {
@@ -52,7 +47,6 @@ impl<'a> Memory<'a> {
                     Err(Error::UnexpectedStackEntry {
                         index: *i,
                         msg: format!("Expected Entry, found {:#?}", self.stack[*i]),
-                        data_ref: *dref,
                     })
                 }
             }
@@ -61,19 +55,28 @@ impl<'a> Memory<'a> {
     }
 
     /// get the content of a &Data. Errors if the returntype doesn't match the data
-    pub fn get_as<T: 'a + GetFromMemoryAs<'a>>(&'a self, d: &'a Data) -> Result<T> {
+    pub fn get_as<'d, 'r, T>(&'mem self, d: &'d Data) -> Result<T>
+    where
+        T: GetFromMemoryAs<'r>,
+        'mem: 'd,
+        'd: 'r,
+    {
         <T as GetFromMemoryAs>::get_from_mem(self, d)
     }
 }
 
-impl<'a, T> GetFromMemoryAs<'a> for T
+impl<'r, T> GetFromMemoryAs<'r> for T
 where
-    T: 'a,
-    PrimitiveValue: TryAsRef<'a, Self>,
+    T: 'r,
+    PrimitiveValue: TryAsRef<'r, T>,
 {
     /// The implementation that deals with the primitive values, and
     /// looks into `Data::Ref`, if one is found
-    fn get_from_mem(mem: &'a Memory<'a>, d: &'a Data) -> Result<Self> {
+    fn get_from_mem<'m, 'd>(mem: &'m Memory, d: &'d Data) -> Result<Self>
+    where
+        'm: 'd,
+        'd: 'r,
+    {
         match d {
             Data::Primitive(p) => get_primitive_as(p),
             Data::Ref(r) => {
@@ -85,9 +88,16 @@ where
     }
 }
 
-impl<'a, T: 'a + GetFromMemoryAs<'a>> GetFromMemoryAs<'a> for Vec<T> {
+impl<'r, T> GetFromMemoryAs<'r> for Vec<T>
+where
+    T: GetFromMemoryAs<'r>,
+{
     /// The implementation for vectors
-    fn get_from_mem(mem: &'a Memory<'a>, d: &'a Data) -> Result<Self> {
+    fn get_from_mem<'m, 'd>(mem: &'m Memory, d: &'d Data) -> Result<Self>
+    where
+        'd: 'r,
+        'm: 'd,
+    {
         match d {
             Data::Vec(v) => {
                 let res = v
@@ -112,10 +122,9 @@ impl std::fmt::Display for StackEntry {
     }
 }
 
-fn get_primitive_as<'a, T>(p: &'a PrimitiveValue) -> Result<T>
+fn get_primitive_as<'res, T: 'res>(p: &'res PrimitiveValue) -> Result<T>
 where
-    T: 'a,
-    PrimitiveValue: TryAsRef<'a, T>,
+    PrimitiveValue: TryAsRef<'res, T>,
 {
     p.try_as_ref()
         .ok_or_else(|| type_error::<T>(p.clone().into()))

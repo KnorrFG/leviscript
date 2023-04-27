@@ -20,38 +20,36 @@ use crate::vm::*;
 /// [OpCode macro](proc_macros::OpCode)
 #[derive(Debug, Clone, Copy, OpCode, PartialEq)]
 pub enum OpCode {
-    /// The first usize is the index of the stack at which the executable name
-    /// is stored, and the second usize is the index of the stack at which
-    /// The vec with the arguments is stored
-    Exec((DataRef, DataRef)),
-    /// the usize tells StrCat how many DataRefs follow in the bytecode
-    StrCat(usize),
-    /// Just Data that will be used by the last command that came before it
-    DataRef(DataRef),
-    /// Push a Ref to another value onto the stack
-    PushRefToStack(DataRef),
-    /// Push an int to the stack
-    PushIntToStack(i64),
-    /// exits the program, returns the result
     Exit(i32),
+    PushDataSecRef(DataSecIdx),
+    PushPrimitive(CopyValue),
+    Exec,
+    StrCat,
+}
+
+/// Represents an index into the data-section vec
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct DataSecIdx(pub usize);
+
+/// In the Datasection the format is different than on the Stack, E.e. on the stack there will
+/// be a String, but in the data section, there will be a &str. So we cant describe data section
+/// types the same way we descrive types during compilation. Also DataSecTypes must be Copy
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum DataSecType {
+    StrRef,
 }
 
 impl OpCode {
     /// Patches DataRefs in OpCode args
+    /// The OpCode macro could generate this too
     ///
     /// If you combine multiple chunks of opcodes, references to the data section will become
     /// invalid. This function allows updating the references
     pub fn offset_data_section_addr(&mut self, offset: usize) {
         use OpCode::*;
         match self {
-            Exec((a, b)) => {
-                a.offset_data_section_addr(offset);
-                b.offset_data_section_addr(offset);
-            }
-            DataRef(d) | PushRefToStack(d) => {
-                d.offset_data_section_addr(offset);
-            }
-            Exit(_) | StrCat(_) | PushIntToStack(_) => {}
+            PushDataSecRef(DataSecIdx(r)) => *r += offset,
+            Exit(_) | PushPrimitive(_) | Exec | StrCat => {}
         };
     }
 }

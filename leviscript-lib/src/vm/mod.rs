@@ -1,12 +1,63 @@
 //! contains the exec functions that correspond to the [OpCode](crate::core::OpCode) variants
 
 use crate::core::*;
+use std::any::type_name;
+use std::ops::{Deref, DerefMut};
 use std::result::Result as StdResult;
-use std::{any::type_name, process};
 use thiserror::Error;
 
-pub mod memory;
-pub use memory::*;
+/// type that is used at runtime to represent the stack
+pub struct Stack(Vec<StackEntry>);
+
+impl Stack {
+    pub fn push_val(&mut self, v: Value) {
+        self.0.push(StackEntry::Value(v));
+    }
+
+    pub fn push_val_and_ref(&mut self, v: Value) {
+        self.push_val(v);
+        self.0.push(StackEntry::Data(Data::Ref(
+            self.0.last().unwrap().get_value_ref().unwrap(),
+        )));
+    }
+}
+
+impl Deref for Stack {
+    type Target = Vec<StackEntry>;
+    fn deref(&self) -> &Vec<StackEntry> {
+        &self.0
+    }
+}
+
+impl DerefMut for Stack {
+    fn deref_mut(&mut self) -> &mut Vec<StackEntry> {
+        &mut self.0
+    }
+}
+/// A stack entry can be different things, one layer of indirection
+/// for good measure
+#[derive(Debug)]
+pub enum StackEntry {
+    Data(Data),
+    Value(Value),
+}
+
+impl From<Data> for StackEntry {
+    fn from(value: Data) -> Self {
+        StackEntry::Data(value)
+    }
+}
+
+impl StackEntry {
+    fn get_value_ref(&self) -> Option<&Value> {
+        if let StackEntry::Value(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+}
+pub mod built_ins;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -22,12 +73,8 @@ pub enum Error {
         expected_type: &'static str,
     },
 
-    #[error("Unexpected stack entry at {index} via {data_ref:?}: {msg}")]
-    UnexpectedStackEntry {
-        index: usize,
-        msg: String,
-        data_ref: DataRef,
-    },
+    #[error("Unexpected stack entry at {index}: {msg}")]
+    UnexpectedStackEntry { index: usize, msg: String },
 
     #[error("Unexpected Opcode at {pc:?}, expected {expected}, found:\n{found}")]
     UnexpectedOpcode {
@@ -38,6 +85,12 @@ pub enum Error {
 
     #[error("Opcode at pc is Non-executable")]
     NonExecutableOpCode,
+
+    #[error("The stack was empty unexpectedly: {0}")]
+    StackEmpty(String),
+
+    #[error("Unknown Builtin: {0}")]
+    UnknownBuiltIn(String),
 }
 
 fn type_error<T: ?Sized>(d: Data) -> Error {
@@ -49,9 +102,9 @@ fn type_error<T: ?Sized>(d: Data) -> Error {
 
 /// returned by all exec_ functions
 pub enum ExecOutcome {
-    // the new value for the program counter
+    /// the new value for the program counter
     Pc(*const u8),
-    // All good, script finished successfull
+    /// All good, script finished successfull
     ExitCode(i32),
 }
 
@@ -61,12 +114,14 @@ pub type ExecResult = Result<ExecOutcome>;
 macro_rules! rt_err{
     ($msg:literal $(, $args:expr)*) => { Error::Runtime(format!($msg $(, $args)*)) };
 }
+pub(crate) use rt_err;
 
 macro_rules! rt_assert{
     ($cond:expr, $msg:literal $(, $args:expr)*) => {
         if ! $cond { return Err(rt_err!($msg $(, $args)*)); }
     };
 }
+pub(crate) use rt_assert;
 
 macro_rules! bail{
     ($($err:tt)*) => {
@@ -92,55 +147,37 @@ macro_rules! ok_pc {
     };
 }
 
-pub unsafe fn exec_exec(pc: *const u8, mem: &mut Memory) -> ExecResult {
-    let (bin, args) = get_body!(Exec, pc.offset(2));
-    let bin_name = mem.get_as::<&str>(mem.deref_refobj(bin)?)?;
-    let resolved_args = mem.deref_refobj(&args)?;
-    let Data::Vec(args) = resolved_args else {
-         bail!(TypeError { accessed_data: resolved_args.clone(), expected_type: "Vec"});
-    };
-    let args_as_str: Vec<&str> = args
-        .iter()
-        .map(|arg| mem.get_as::<&str>(arg))
-        .collect::<StdResult<_, _>>()?;
-    let stat = process::Command::new(&bin_name)
-        .args(&args_as_str)
-        .status()
-        .map_err(|e| rt_err!("Executing {}: {}", bin_name, e))?;
-    rt_assert!(stat.success(), "{} did not execute successfully", bin_name);
+pub unsafe fn exec_exec(pc: *const u8, stack: &mut Stack, data: &Vec<Value>) -> ExecResult {
+    built_ins::wrapper_2(built_ins::impls::exec, "exec", stack)?;
     ok_pc!(pc.offset(isize_of!(EXEC)))
 }
 
-pub unsafe fn exec_strcat(pc: *const u8, mem: &mut Memory) -> ExecResult {
-    let n = get_body!(StrCat, pc.offset(2));
-    let n_is = *n as isize;
-    let elems: Vec<&str> = (0isize..n_is)
-        .map(|i| {
-            let addr = pc.offset(isize_of!(STRCAT) + i * isize_of!(DATAREF) + 2);
-            mem.get_as(mem.deref_refobj(get_body!(DataRef, addr))?)
-        })
-        .collect::<StdResult<_, _>>()?;
-    mem.stack.push(StackEntry::Entry(elems.join("").into()));
-    ok_pc!(pc.offset(isize_of!(STRCAT) + n_is * isize_of!(DATAREF)))
+pub unsafe fn exec_strcat(pc: *const u8, stack: &mut Stack, data: &Vec<Value>) -> ExecResult {
+    built_ins::wrapper_1_ret(built_ins::impls::strcat, "strcat", stack);
+    ok_pc!(pc.offset(isize_of!(STRCAT)))
 }
 
-pub unsafe fn exec_dataref(_: *const u8, _: &mut Memory) -> ExecResult {
-    Err(Error::NonExecutableOpCode)
-}
-
-pub unsafe fn exec_exit(pc: *const u8, _: &mut Memory) -> ExecResult {
+pub unsafe fn exec_exit(pc: *const u8, _: &mut Stack, data: &Vec<Value>) -> ExecResult {
     let res = get_body!(Exit, pc.offset(2));
     Ok(ExecOutcome::ExitCode(*res))
 }
 
-pub unsafe fn exec_pushreftostack(pc: *const u8, mem: &mut Memory) -> ExecResult {
-    let idx = get_body!(PushRefToStack, pc.offset(2));
-    mem.stack.push(StackEntry::Entry(Data::Ref(*idx)));
-    ok_pc!(pc.offset(isize_of!(PUSHREFTOSTACK)))
+pub unsafe fn exec_pushdatasecref(
+    pc: *const u8,
+    stack: &mut Stack,
+    data: &Vec<Value>,
+) -> ExecResult {
+    let dref = get_body!(PushDataSecRef, pc.offset(2));
+    stack.push(Data::Ref(data.get_unchecked(dref.0)).into());
+    ok_pc!(pc.offset(isize_of!(PUSHDATASECREF)))
 }
 
-pub unsafe fn exec_pushinttostack(pc: *const u8, mem: &mut Memory) -> ExecResult {
-    let idx = get_body!(PushIntToStack, pc.offset(2));
-    mem.stack.push(StackEntry::Entry((*idx).into()));
-    ok_pc!(pc.offset(isize_of!(PUSHINTTOSTACK)))
+pub unsafe fn exec_pushprimitive(
+    pc: *const u8,
+    stack: &mut Stack,
+    data: &Vec<Value>,
+) -> ExecResult {
+    let res = get_body!(PushPrimitive, pc.offset(2));
+    stack.push(Data::from(*res).into());
+    ok_pc!(pc.offset(isize_of!(PUSHPRIMITIVE)))
 }

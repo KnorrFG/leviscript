@@ -13,15 +13,6 @@ pub struct SymbolInfo {
     pub dtype: DataType,
 }
 
-/// Represents TypeInformation at compile time
-#[derive(Debug, Clone)]
-pub enum DataType {
-    String,
-    Int,
-    Vec(Box<DataType>),
-    Ref(Box<DataType>),
-}
-
 /// Holds information about data on the stack
 #[derive(Debug, Clone)]
 pub struct DataInfo {
@@ -32,20 +23,23 @@ pub struct DataInfo {
     pub ast_id: usize,
 }
 
-pub mod data;
+mod data;
 pub use data::*;
 
-pub mod scopes;
+mod scopes;
 pub use scopes::*;
 
-pub mod intermediate_bytecode;
+mod intermediate_bytecode;
 pub use intermediate_bytecode::*;
 
-pub mod final_bytecode;
+mod final_bytecode;
 pub use final_bytecode::*;
 
-pub mod ast;
+mod ast;
 pub use ast::*;
 
-pub mod opcode;
+mod opcode;
 pub use opcode::*;
+
+mod types;
+pub use types::*;
