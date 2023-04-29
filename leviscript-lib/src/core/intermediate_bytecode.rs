@@ -6,7 +6,7 @@ pub struct ImByteCode {
     /// Basically the program
     pub text: Vec<OpCode>,
     /// Data section
-    pub data: Vec<Value>,
+    pub data: Vec<ComptimeValue>,
     /// AST node from which the corresponding OpCode was generated
     pub ast_ids: Vec<usize>,
     /// the size that the stack will have, after this code was executed

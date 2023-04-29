@@ -8,7 +8,7 @@ use crate::core::*;
 #[derive(Debug, Clone)]
 pub struct FinalByteCode {
     pub text: Vec<u8>,
-    pub data: Vec<Value>,
+    pub data: Vec<ComptimeValue>,
     pub header: FinalByteCodeHeader,
 }
 

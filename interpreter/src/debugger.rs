@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail, Result};
 use crossterm::{self as ct, terminal};
 use leviscript_lib::core::*;
 use leviscript_lib::parser::{self, PestErrVariant, PestError, Span};
-use leviscript_lib::vm;
+use leviscript_lib::vm::{self, Memory};
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 #[derive(PartialEq, Clone)]
@@ -19,16 +19,13 @@ enum UserCommand {
 }
 
 pub fn run(
-    final_bc: &FinalByteCode,
+    final_bc: FinalByteCode,
     im_bc: &ImByteCode,
     spans: &[Span],
     src: &str,
     stdout: &mut Stdout,
 ) -> Result<()> {
-    let mut mem = vm::Memory {
-        stack: vec![],
-        data: &final_bc.data,
-    };
+    let mut mem = Memory::from(final_bc.data.clone());
     let mut pc = final_bc.text.as_ptr();
     let mut rl = DefaultEditor::new()?;
     let mut last_cmd = None;
@@ -37,7 +34,7 @@ pub fn run(
     use UserCommand::*;
     loop {
         // print_next_instruction(final_bc, im_bc, pc);
-        render_state(stdout, &mem, im_bc, final_bc, src, pc)?;
+        render_state(stdout, &mem.stack, im_bc, &final_bc, src, pc)?;
         stdout.flush()?;
         let mut cmd = read_line(&mut rl)?;
         if cmd == UserCommand::LastCommand && last_cmd.is_some() {
@@ -74,7 +71,7 @@ pub fn run(
                 }
             }
             ShowData => {
-                for (i, elem) in mem.data.iter().enumerate() {
+                for (i, elem) in final_bc.data.iter().enumerate() {
                     println!("{}: {:?}", i, elem);
                 }
             }
@@ -86,8 +83,8 @@ pub fn run(
                 }
             }
             ShowDataAt(i) => {
-                if *i < mem.data.len() {
-                    println!("{:?}", mem.data[*i]);
+                if *i < final_bc.data.len() {
+                    println!("{:?}", final_bc.data[*i]);
                 } else {
                     println!("Invalid data index");
                 }
@@ -193,6 +190,7 @@ impl Rect {
         }
 
         while counter < self.h {
+            ct::queue!(stdout, ct::cursor::MoveTo(self.x, self.y + counter))?;
             print!("{}", vec![" "; wu].join(""));
             counter += 1;
         }
@@ -202,7 +200,7 @@ impl Rect {
 
 fn render_state(
     stdout: &mut Stdout,
-    mem: &vm::Memory,
+    stack: &Vec<RuntimeData>,
     bc_im: &ImByteCode,
     bc_final: &FinalByteCode,
     src: &str,
@@ -212,7 +210,7 @@ fn render_state(
     let term_size = terminal::size()?;
     let rects = compute_rects(term_size);
     render_bc(stdout, &rects.bc, bc_im, bc_final.pc_to_index(pc))?;
-    render_stack(stdout, &rects.stack, &mem.stack)?;
+    render_stack(stdout, &rects.stack, stack)?;
     render_data(stdout, &rects.data, &bc_im.data)?;
     render_src(stdout, &rects.src, &src)?;
     ct::queue!(stdout, ct::cursor::MoveTo(curr_cursor.0, curr_cursor.1))?;
@@ -224,7 +222,7 @@ fn render_src(stdout: &mut Stdout, rect: &Rect, src: &str) -> Result<()> {
     Ok(())
 }
 
-fn render_data(stdout: &mut Stdout, rect: &Rect, data: &Vec<Data>) -> Result<()> {
+fn render_data(stdout: &mut Stdout, rect: &Rect, data: &Vec<ComptimeValue>) -> Result<()> {
     let lines = std::iter::once("Data:".into()).chain(
         data.iter()
             .enumerate()
@@ -240,7 +238,7 @@ fn render_stack(stdout: &mut Stdout, rect: &Rect, stack: &vm::Stack) -> Result<(
         .iter()
         .enumerate()
         .rev()
-        .map(|(i, entry)| format!("{}: {}", i, entry));
+        .map(|(i, entry)| format!("{}: {:?}", i, entry));
     if lines_offset > 0 {
         rect.render(
             stdout,

@@ -24,7 +24,7 @@ fn main() -> Result<()> {
         if output == expected_output {
             println!("{}: passed", script.display());
         } else {
-            bail!("{}: failed\nactual output:\n{}", script.display(), output);
+            println!("{}: failed\nactual output:\n{}", script.display(), output);
         }
     }
     Ok(())

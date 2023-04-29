@@ -1,13 +1,10 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 
 use leviscript_lib::compiler::{self, Compilable};
 use leviscript_lib::parser::{PestErrVariant, PestError, PestParser, Span};
-use leviscript_lib::{
-    core::*,
-    parser,
-    vm::{self, Memory},
-};
+use leviscript_lib::vm::Memory;
+use leviscript_lib::{core::*, parser, vm};
 
 use std::path::PathBuf;
 
@@ -39,7 +36,11 @@ struct Cli {
 fn main() -> Result<()> {
     // let src = std::fs::read_to_string("../test-script/xexp.les")?;
     let cli = Cli::parse();
-    let src = std::fs::read_to_string(cli.script)?;
+    let src = std::fs::read_to_string(&cli.script).context(format!(
+        "loading script: {}\ncwd:{}",
+        cli.script.display(),
+        std::env::current_dir()?.display()
+    ))?;
     let parse_tree = parser::LsParser::parse(parser::Rule::file, &src)?;
 
     #[cfg(feature = "dev")]
@@ -55,7 +56,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let intermediate = ast.compile(&Scopes::default(), &StackInfo::default())?;
+    let intermediate = ast.compile(Scopes::default(), StackInfo::default())?;
     #[cfg(feature = "dev")]
     if cli.show_byte_code {
         dbg!(&intermediate);
@@ -70,7 +71,7 @@ fn main() -> Result<()> {
 
         let mut stdout = stdout();
         ct::execute!(stdout, terminal::EnterAlternateScreen)?;
-        let res = debugger::run(&final_bc, &intermediate, &spans, &src, &mut stdout);
+        let res = debugger::run(final_bc, &intermediate, &spans, &src, &mut stdout);
         ct::execute!(stdout, terminal::LeaveAlternateScreen)?;
         return res;
     }
@@ -86,10 +87,7 @@ fn main() -> Result<()> {
 }
 
 pub fn run(bc: FinalByteCode, spans: &[Span]) -> Result<i32, String> {
-    let mut mem = Memory {
-        stack: vec![],
-        data: &bc.data,
-    };
+    let mut mem = Memory::from(bc.data.clone());
     let mut pc = bc.text.as_ptr();
 
     use vm::ExecOutcome::*;

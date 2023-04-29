@@ -4,17 +4,12 @@
 //! that is implemented by all Ast node types. The definition and implementation of this trait
 //! reside in this file.
 
+use std::io::Write;
 use thiserror::Error;
 
 use crate::core::*;
 use crate::utils;
-
-/// Handles first part of compilation
-pub trait Compilable {
-    fn compile(&self, scopes: &Scopes, stack_info: &StackInfo) -> CompilationResult;
-}
-
-pub type CompilationResult = Result<ImByteCode, CompilationError>;
+use std::result::Result as StdResult;
 
 /// The errors that can occur during compilation
 #[derive(Error, Debug)]
@@ -24,6 +19,13 @@ pub enum CompilationError {
 
     #[error("A compiler bug was detected: {msg}")]
     CompilerBug { ast_id: usize, msg: String },
+}
+
+type Result<T> = StdResult<T, CompilationError>;
+
+/// Handles first part of compilation
+pub trait Compilable {
+    fn compile(&self, scopes: Scopes, stack_info: StackInfo) -> Result<ImByteCode>;
 }
 
 /// return a compilation error immediately
@@ -46,115 +48,203 @@ macro_rules! compiler_bug {
 macro_rules! impl_compilable {
     ($t:ty: $self:ident, $scopes:ident, $stack_info:ident => $code:tt) => {
         impl Compilable for $t {
-            fn compile(&$self, $scopes: &Scopes, $stack_info: &StackInfo) -> CompilationResult {
+            fn compile(&$self, $scopes: Scopes, $stack_info: StackInfo) -> Result<ImByteCode> {
                 $code
             }
         }
     };
 }
 
-impl_compilable! { Expr: self, scopes, stack_info => {
-    let mut data = vec![];
-    let mut text = vec![];
-    let mut ast_ids = vec![];
+impl Compilable for Expr {
+    fn compile(&self, mut scopes: Scopes, mut stack_info: StackInfo) -> Result<ImByteCode> {
+        let mut data = vec![];
+        let mut text = vec![];
+        let mut ast_ids = vec![];
 
-    use Expr::*;
-    Ok(match self {
-        XExpr { exe, args, id } => {
-            let mut atom_to_ref = |a: &XExprAtom|
-                Ok(match a {
-                    XExprAtom::Str(_, val) => {
-                        data.push(val.to_owned().into());
-                        DataRef::DataSectionIdx(data.len() - 1)
+        use Expr::*;
+        Ok(match self {
+            XExpr { exe, args, id } => {
+                // handle the first argument
+                fn compile_atom(
+                    data: &mut Vec<Value<()>>,
+                    text: &mut Vec<OpCode>,
+                    atom: &XExprAtom,
+                    scopes: &mut Scopes,
+                ) -> Result<()> {
+                    match atom {
+                        XExprAtom::Str(_, val) => {
+                            // if it's a string, put it into the data section, and put an instruction
+                            // into the opcode to push a reference to the data section onto the stack
+                            data.push(val.to_owned().into());
+                            text.push(OpCode::PushDataSecRef(data.len() - 1));
+                        }
+                        XExprAtom::Ref(id, name) => {
+                            // if it's a reference, the data already lives somewhere, and we simply put
+                            // the reference to that somewhere on the stack
+                            let SymbolInfo {
+                                stack_idx,
+                                dtype: _,
+                            } = get_symbol_or_raise(&scopes, name, *id)?;
+                            text.push(OpCode::RepushStackEntry(*stack_idx));
+                        }
                     }
-                    XExprAtom::Ref(id, name) => {
-                        let SymbolInfo {stack_idx, dtype: _ } = get_symbol_or_raise(scopes, name, *id)?;
-                        DataRef::StackIdx(*stack_idx)
-                    }
-                });
-            let exe_ref = atom_to_ref(exe)?;
-            let args: Vec<_> = args.iter().map(|a| Ok(Data::Ref(atom_to_ref(a)?))).collect::<Result<_,_>>()?;
-            let arg_idx = data.len();
-            data.push(Data::Vec(args));
-            text.push(OpCode::Exec((exe_ref, DataRef::DataSectionIdx(arg_idx))));
-            ast_ids.push(*id);
-            ImByteCode
-         { text, data, ast_ids, stack_info: stack_info.clone(), scopes: scopes.clone()}
-        }
-        Let { id, symbol_name, value_expr } => {
-            // if the child expression is a symbol, the scopes are updated.
-            // the code in the else block would work, but creates unnessessary
-            // indirection
-            if let Expr::Symbol(id, name) = value_expr.as_ref() {
-                let symbol_info = get_symbol_or_raise(scopes, name, *id)?;
-                let mut scopes = scopes.clone();
-                scopes.add_symbol_info(symbol_name.to_owned(), symbol_info.clone());
-                ImByteCode
-             {
-                    text, data, ast_ids, stack_info: stack_info.clone(), scopes: scopes.clone()
+                    Ok(())
                 }
-            } else {
-                let mut value_code = value_expr.compile(scopes, stack_info)?;
-                if !(stack_info.len() < value_code.stack_info.len()){
-                    compiler_bug!(*id,
-                        "During compilation of let statement. \n\
-                        The stack size should have increase through the code\n\
-                        representing the rhs of the let-binding. But it didn't.\n\
-                        rhs-code:\n{:#?}\n\nrhs-expr:\n{:#?}", value_code, value_expr);
+
+                compile_atom(&mut data, &mut text, &exe, &mut scopes)?;
+                // the second argument is a variadic vec of Data. That means we put all the
+                // args on the stack, and then an entry saying how many that are
+                let n = args.len();
+                for arg in args {
+                    compile_atom(&mut data, &mut text, &arg, &mut scopes)?;
                 }
-                let info = value_code.stack_info.back().unwrap();
-                value_code.scopes.add_symbol(symbol_name.clone(), value_code.stack_info.len() - 1, info.dtype.clone());
-                value_code
+
+                // stack info wasn't updated, because it would be removed again anyway
+                text.push(OpCode::PushPrimitive(n.into()));
+                text.push(OpCode::Exec);
+
+                // no need to update stack info. the exec opcode will pop all the args we
+                // just put on it
+                ImByteCode {
+                    text,
+                    data,
+                    ast_ids,
+                    stack_info,
+                    scopes,
+                }
             }
-        }
-        StrLit(id, elems) => {
-            let mut strcat_args = vec![];
-            let mut current_byte_code = ImByteCode
-         {
-                text, data, ast_ids, stack_info: stack_info.clone(), scopes: scopes.clone()
-            };
-            for elem in elems {
+            Let {
+                id,
+                symbol_name,
+                value_expr,
+            } => {
+                // if the child expression is a symbol, the scopes are updated.
+                // the code in the else block would work, but creates unnessessary
+                // indirection
+                if let Expr::Symbol(id, name) = value_expr.as_ref() {
+                    let symbol_info = get_symbol_or_raise(&scopes, name, *id)?;
+                    scopes.add_symbol_info(symbol_name.to_owned(), symbol_info.clone());
+                    ImByteCode {
+                        text,
+                        data,
+                        ast_ids,
+                        stack_info,
+                        scopes,
+                    }
+                } else {
+                    let mut value_code = value_expr.compile(scopes.clone(), stack_info.clone())?;
+                    std::io::stdout().flush();
+                    if !(stack_info.len() + 1 == value_code.stack_info.len()) {
+                        compiler_bug!(
+                            *id,
+                            "During compilation of let statement. \n\
+                            The stack size should have increase by one through the code\n\
+                            representing the rhs of the let-binding. But it didn't.\n\
+                            rhs-code:\n{:#?}\n\nrhs-expr:\n{:#?}",
+                            value_code,
+                            value_expr
+                        );
+                    }
+                    let info = value_code.stack_info.back().unwrap();
+                    value_code.scopes.add_symbol(
+                        symbol_name.clone(),
+                        value_code.stack_info.len() - 1,
+                        info.dtype.clone(),
+                    );
+                    value_code
+                }
+            }
+            StrLit(id, elems) => {
+                let mut current_byte_code = ImByteCode {
+                    text,
+                    data,
+                    ast_ids,
+                    stack_info,
+                    scopes,
+                };
                 use StrLitElem::*;
-                match elem {
-                    PureStrLit(_, val) => {
-                        strcat_args.push(DataRef::DataSectionIdx(current_byte_code.data.len()));
-                        current_byte_code.data.push(val.clone().into());
-                    }
-                    Symbol(symbol_ast_id, name) => {
-                        let info = get_symbol_or_raise(scopes, name, *symbol_ast_id)?;
-                        strcat_args.push(DataRef::StackIdx(info.stack_idx));
-                    }
-                    Expr(_, sub_expr ) => {
-                        let sub_expr_code = sub_expr.compile(&current_byte_code.scopes, &current_byte_code.stack_info)?;
-                        current_byte_code.append(sub_expr_code);
-                        strcat_args.push(DataRef::StackIdx(current_byte_code.stack_top_idx()));
+                let n = elems.len();
+                for e in elems {
+                    match &e {
+                        PureStrLit(_, val) => {
+                            current_byte_code.data.push(Value::Str(val.clone()));
+                            current_byte_code
+                                .text
+                                .push(OpCode::PushDataSecRef(current_byte_code.data.len() - 1));
+                        }
+                        Symbol(symbol_ast_id, name) => {
+                            let info = get_symbol_or_raise(
+                                &current_byte_code.scopes,
+                                name,
+                                *symbol_ast_id,
+                            )?;
+                            current_byte_code
+                                .text
+                                .push(OpCode::RepushStackEntry(info.stack_idx));
+                        }
+                        Expr(_, sub_expr) => {
+                            let sub_expr_code = sub_expr.compile(
+                                current_byte_code.scopes.clone(),
+                                current_byte_code.stack_info.clone(),
+                            )?;
+                            current_byte_code.append(sub_expr_code);
+                            // the sub expression will have updated the stack info.
+                            // We dont want this, this is transparent to the outside world.
+                            // because after this operation the stack is one bigger than before
+                            // and what happens in between doesn't matter. So this must be
+                            // deleted. This might make problems, because the subexpression
+                            // will have wrong information about the stack size, so it might push
+                            // invalid heap refs. So i should probably always update the stack
+                            // info when i manip the stack.
+                            // but then that should go hand in hand with pushing the instruction
+                            current_byte_code.stack_info.pop_back();
+                        }
                     }
                 }
+                current_byte_code.text.push(OpCode::PushPrimitive(n.into()));
+                current_byte_code.text.push(OpCode::StrCat);
+                // there will the value and the ref to that value on the Stack
+                // StackInfo should consist of a wrapper around DataType and Value
+                current_byte_code.stack_info.push_back(DataInfo {
+                    dtype: DataType::Str,
+                    ast_id: *id,
+                });
+                current_byte_code
             }
-            current_byte_code.text.push(OpCode::StrCat(strcat_args.len()));
-            for arg in strcat_args {
-                current_byte_code.text.push(OpCode::DataRef(arg));
+            Symbol(ast_id, name) => {
+                let symbol_info = get_symbol_or_raise(&scopes, name, *ast_id)?;
+                text.push(OpCode::RepushStackEntry(symbol_info.stack_idx));
+                let mut stack_info = stack_info.clone();
+                stack_info.push_back(DataInfo {
+                    dtype: DataType::Ref(Box::new(symbol_info.dtype.clone())),
+                    ast_id: *ast_id,
+                });
+                ImByteCode {
+                    text,
+                    data,
+                    ast_ids,
+                    stack_info,
+                    scopes: scopes.clone(),
+                }
             }
-            current_byte_code.stack_info.push_back(DataInfo{dtype: DataType::String, ast_id: *id});
-            current_byte_code
-        }
-        Symbol(ast_id, name) => {
-            let symbol_info = get_symbol_or_raise(scopes, name, *ast_id)?;
-            text.push(OpCode::PushRefToStack(DataRef::StackIdx(symbol_info.stack_idx)));
-            let mut stack_info = stack_info.clone();
-            stack_info.push_back(DataInfo { dtype: DataType::Ref(Box::new(symbol_info.dtype.clone())), ast_id: *ast_id });
-            ImByteCode
-         { text, data, ast_ids, stack_info, scopes: scopes.clone()}
-        }
-        IntLit(id, val) => {
-            text.push(OpCode::PushIntToStack(*val));
-            let mut stack_info = stack_info.clone();
-            stack_info.push_back(DataInfo { dtype: DataType::Int, ast_id: *id });
-            ImByteCode
-         { text, data, ast_ids, stack_info, scopes: scopes.clone()}
-        }
-    })
-}}
+            IntLit(id, val) => {
+                text.push(OpCode::PushPrimitive(CopyValue::Int(*val)));
+                let mut stack_info = stack_info.clone();
+                stack_info.push_back(DataInfo {
+                    dtype: DataType::Int,
+                    ast_id: *id,
+                });
+                ImByteCode {
+                    text,
+                    data,
+                    ast_ids,
+                    stack_info,
+                    scopes,
+                }
+            }
+        })
+    }
+}
 
 impl_compilable! {  Phrase: self, scopes, stack_info  => {
     use Phrase::*;
@@ -165,11 +255,10 @@ impl_compilable! {  Phrase: self, scopes, stack_info  => {
 
 impl_compilable! { Block: self, scopes, stack_info => {
     let Block(_, terms) = self;
-    let mut res = ImByteCode
-::with_scope_and_stack(scopes.clone(), stack_info.clone());
+    let mut res = ImByteCode::with_scope_and_stack(scopes.clone(), stack_info.clone());
 
     for term in terms {
-        let c = term.compile(&res.scopes, &res.stack_info)?;
+        let c = term.compile(res.scopes.clone(), res.stack_info.clone())?;
         res.append(c);
     }
     Ok(res)
@@ -198,7 +287,7 @@ fn get_symbol_or_raise<'a>(
     scopes: &'a Scopes,
     name: &str,
     ast_id: usize,
-) -> Result<&'a SymbolInfo, CompilationError> {
+) -> Result<&'a SymbolInfo> {
     if let Some(i) = scopes.find_index_for(name) {
         Ok(i)
     } else {

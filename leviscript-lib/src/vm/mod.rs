@@ -1,63 +1,15 @@
 //! contains the exec functions that correspond to the [OpCode](crate::core::OpCode) variants
 
 use crate::core::*;
-use std::any::type_name;
-use std::ops::{Deref, DerefMut};
 use std::result::Result as StdResult;
 use thiserror::Error;
 
-/// type that is used at runtime to represent the stack
-pub struct Stack(Vec<StackEntry>);
-
-impl Stack {
-    pub fn push_val(&mut self, v: Value) {
-        self.0.push(StackEntry::Value(v));
-    }
-
-    pub fn push_val_and_ref(&mut self, v: Value) {
-        self.push_val(v);
-        self.0.push(StackEntry::Data(Data::Ref(
-            self.0.last().unwrap().get_value_ref().unwrap(),
-        )));
-    }
-}
-
-impl Deref for Stack {
-    type Target = Vec<StackEntry>;
-    fn deref(&self) -> &Vec<StackEntry> {
-        &self.0
-    }
-}
-
-impl DerefMut for Stack {
-    fn deref_mut(&mut self) -> &mut Vec<StackEntry> {
-        &mut self.0
-    }
-}
-/// A stack entry can be different things, one layer of indirection
-/// for good measure
-#[derive(Debug)]
-pub enum StackEntry {
-    Data(Data),
-    Value(Value),
-}
-
-impl From<Data> for StackEntry {
-    fn from(value: Data) -> Self {
-        StackEntry::Data(value)
-    }
-}
-
-impl StackEntry {
-    fn get_value_ref(&self) -> Option<&Value> {
-        if let StackEntry::Value(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-}
 pub mod built_ins;
+pub mod heap;
+pub mod memory;
+
+pub use heap::*;
+pub use memory::*;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -69,7 +21,7 @@ pub enum Error {
         as type {expected_type}"
     )]
     TypeError {
-        accessed_data: Data,
+        accessed_data: RuntimeData,
         expected_type: &'static str,
     },
 
@@ -93,12 +45,12 @@ pub enum Error {
     UnknownBuiltIn(String),
 }
 
-fn type_error<T: ?Sized>(d: Data) -> Error {
-    Error::TypeError {
-        accessed_data: d,
-        expected_type: type_name::<T>(),
-    }
-}
+// fn type_error<T: ?Sized>(d: RuntimeData) -> Error {
+//     Error::TypeError {
+//         accessed_data: d,
+//         expected_type: type_name::<T>(),
+//     }
+// }
 
 /// returned by all exec_ functions
 pub enum ExecOutcome {
@@ -123,11 +75,11 @@ macro_rules! rt_assert{
 }
 pub(crate) use rt_assert;
 
-macro_rules! bail{
-    ($($err:tt)*) => {
-        return Err(Error::$($err)*);
-    };
-}
+// macro_rules! bail{
+//     ($($err:tt)*) => {
+//         return Err(Error::$($err)*);
+//     };
+// }
 
 macro_rules! size_of {
     ($i:ident) => {
@@ -147,37 +99,35 @@ macro_rules! ok_pc {
     };
 }
 
-pub unsafe fn exec_exec(pc: *const u8, stack: &mut Stack, data: &Vec<Value>) -> ExecResult {
-    built_ins::wrapper_2(built_ins::impls::exec, "exec", stack)?;
+pub unsafe fn exec_exec(pc: *const u8, mem: &mut Memory) -> ExecResult {
+    built_ins::wrapper_1_var(built_ins::impls::exec, "exec", mem)?;
     ok_pc!(pc.offset(isize_of!(EXEC)))
 }
 
-pub unsafe fn exec_strcat(pc: *const u8, stack: &mut Stack, data: &Vec<Value>) -> ExecResult {
-    built_ins::wrapper_1_ret(built_ins::impls::strcat, "strcat", stack);
+pub unsafe fn exec_strcat(pc: *const u8, mem: &mut Memory) -> ExecResult {
+    built_ins::wrapper_0_var_ret(built_ins::impls::strcat, "strcat", mem)?;
     ok_pc!(pc.offset(isize_of!(STRCAT)))
 }
 
-pub unsafe fn exec_exit(pc: *const u8, _: &mut Stack, data: &Vec<Value>) -> ExecResult {
+pub unsafe fn exec_exit(pc: *const u8, _: &mut Memory) -> ExecResult {
     let res = get_body!(Exit, pc.offset(2));
     Ok(ExecOutcome::ExitCode(*res))
 }
 
-pub unsafe fn exec_pushdatasecref(
-    pc: *const u8,
-    stack: &mut Stack,
-    data: &Vec<Value>,
-) -> ExecResult {
+pub unsafe fn exec_pushdatasecref(pc: *const u8, mem: &mut Memory) -> ExecResult {
     let dref = get_body!(PushDataSecRef, pc.offset(2));
-    stack.push(Data::Ref(data.get_unchecked(dref.0)).into());
+    mem.push_data_section_ref(*dref);
     ok_pc!(pc.offset(isize_of!(PUSHDATASECREF)))
 }
 
-pub unsafe fn exec_pushprimitive(
-    pc: *const u8,
-    stack: &mut Stack,
-    data: &Vec<Value>,
-) -> ExecResult {
+pub unsafe fn exec_pushprimitive(pc: *const u8, mem: &mut Memory) -> ExecResult {
     let res = get_body!(PushPrimitive, pc.offset(2));
-    stack.push(Data::from(*res).into());
+    mem.push_stack(Data::CopyVal(*res));
     ok_pc!(pc.offset(isize_of!(PUSHPRIMITIVE)))
+}
+
+pub unsafe fn exec_repushstackentry(pc: *const u8, mem: &mut Memory) -> ExecResult {
+    let idx = get_body!(RepushStackEntry, pc.offset(2));
+    mem.copy_stack_entry_to_top(*idx);
+    ok_pc!(pc.offset(isize_of!(REPUSHSTACKENTRY)))
 }

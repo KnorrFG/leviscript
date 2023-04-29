@@ -19,6 +19,6 @@ impl DataType {
 /// represents a Function signature
 #[derive(Debug, Clone)]
 pub struct Signature {
-    args: Vec<DataType>,
-    result: DataType,
+    pub args: Vec<DataType>,
+    pub result: DataType,
 }

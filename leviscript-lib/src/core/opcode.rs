@@ -21,22 +21,12 @@ use crate::vm::*;
 #[derive(Debug, Clone, Copy, OpCode, PartialEq)]
 pub enum OpCode {
     Exit(i32),
-    PushDataSecRef(DataSecIdx),
+    PushDataSecRef(usize),
     PushPrimitive(CopyValue),
+    /// makes a copy of the entry at the given index and puts it on top of the stack
+    RepushStackEntry(usize),
     Exec,
     StrCat,
-}
-
-/// Represents an index into the data-section vec
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct DataSecIdx(pub usize);
-
-/// In the Datasection the format is different than on the Stack, E.e. on the stack there will
-/// be a String, but in the data section, there will be a &str. So we cant describe data section
-/// types the same way we descrive types during compilation. Also DataSecTypes must be Copy
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum DataSecType {
-    StrRef,
 }
 
 impl OpCode {
@@ -48,8 +38,8 @@ impl OpCode {
     pub fn offset_data_section_addr(&mut self, offset: usize) {
         use OpCode::*;
         match self {
-            PushDataSecRef(DataSecIdx(r)) => *r += offset,
-            Exit(_) | PushPrimitive(_) | Exec | StrCat => {}
+            PushDataSecRef(r) => *r += offset,
+            RepushStackEntry(_) | Exit(_) | PushPrimitive(_) | Exec | StrCat => {}
         };
     }
 }
