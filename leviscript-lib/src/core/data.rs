@@ -19,7 +19,7 @@ pub trait RefRequirements: Debug + Clone + PartialEq + Eq + Hash {}
 
 // This is where non-copy values are stored. It lives on the stack, but it is not an element of
 // Data, as Data should be Copy.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Value<RefT: RefRequirements> {
     Str(String),
     Keyword(String),
@@ -45,7 +45,7 @@ pub enum CopyValue {
 /// That means either a real value or a reference to a value.
 /// The problem is, that at runtime, a reference is a pointer, which can't
 /// exist at compile time. So at compile time, references are indices
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Data<RefT> {
     CopyVal(CopyValue),
     Ref(RefT),
@@ -120,7 +120,7 @@ impl From<f64> for CopyValue {
 }
 
 impl From<()> for CopyValue {
-    fn from(x: ()) -> Self {
+    fn from(_: ()) -> Self {
         CopyValue::Unit
     }
 }
@@ -171,7 +171,7 @@ impl TryFrom<CopyValue> for () {
 
 impl TryFrom<CopyValue> for *const String {
     type Error = ();
-    fn try_from(value: CopyValue) -> Result<Self, Self::Error> {
+    fn try_from(_: CopyValue) -> Result<Self, Self::Error> {
         Err(())
     }
 }

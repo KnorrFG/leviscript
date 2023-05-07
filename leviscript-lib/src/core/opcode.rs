@@ -25,6 +25,7 @@ pub enum OpCode {
     PushPrimitive(CopyValue),
     /// makes a copy of the entry at the given index and puts it on top of the stack
     RepushStackEntry(usize),
+    DeleteOnHeap(usize),
     Exec,
     StrCat,
 }
@@ -39,7 +40,7 @@ impl OpCode {
         use OpCode::*;
         match self {
             PushDataSecRef(r) => *r += offset,
-            RepushStackEntry(_) | Exit(_) | PushPrimitive(_) | Exec | StrCat => {}
+            _ => {}
         };
     }
 }

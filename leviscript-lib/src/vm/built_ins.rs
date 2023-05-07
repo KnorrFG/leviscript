@@ -38,19 +38,27 @@ pub mod impls {
     }
 }
 
-fn signatures(f_name: &str) -> Option<Signature> {
+pub const BUILT_INS: [&'static str; 2] = ["exec", "strcat"];
+
+pub fn signatures(f_name: &str) -> Option<Signature> {
     Some(match f_name {
-        "exec" => Signature {
-            args: vec![DataType::Str, DataType::vec(DataType::Str)],
-            result: DataType::Unit,
-        },
-        "strcat" => Signature {
-            args: vec![DataType::vec(DataType::Str)],
-            result: DataType::Str,
-        },
+        "exec" => Signature::new()
+            .arg(DataType::str())
+            .variadic(DataType::str()),
+        "strcat" => Signature::new()
+            .variadic(DataType::str())
+            .result(DataType::str()),
         _ => {
             return None;
         }
+    })
+}
+
+pub fn opcode(f_name: &str) -> Option<OpCode> {
+    Some(match f_name {
+        "exec" => OpCode::Exec,
+        "strcat" => OpCode::StrCat,
+        _ => return None,
     })
 }
 

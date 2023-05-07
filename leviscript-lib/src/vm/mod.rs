@@ -5,10 +5,9 @@ use std::result::Result as StdResult;
 use thiserror::Error;
 
 pub mod built_ins;
-pub mod heap;
 pub mod memory;
 
-pub use heap::*;
+pub use built_ins::*;
 pub use memory::*;
 
 #[derive(Error, Debug)]
@@ -130,4 +129,10 @@ pub unsafe fn exec_repushstackentry(pc: *const u8, mem: &mut Memory) -> ExecResu
     let idx = get_body!(RepushStackEntry, pc.offset(2));
     mem.copy_stack_entry_to_top(*idx);
     ok_pc!(pc.offset(isize_of!(REPUSHSTACKENTRY)))
+}
+
+pub unsafe fn exec_deleteonheap(pc: *const u8, mem: &mut Memory) -> ExecResult {
+    let idx = get_body!(DeleteOnHeap, pc.offset(2));
+    mem.heap.delete(*idx);
+    ok_pc!(pc.offset(isize_of!(DELETEONHEAP)))
 }

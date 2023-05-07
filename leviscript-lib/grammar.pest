@@ -9,7 +9,9 @@ block = { phrase ~ (NEWLINE* ~ phrase)* }
 
 // add statement later
 phrase = {expression}
-expression = { x_expression | let_expr | str_lit | symbol | int_lit }
+
+// call must come before symbol, because most calls begin with a symbol
+expression = { x_expression | let_expr | str_lit | call | symbol | int_lit }
 
 WHITESPACE = _{ " " | "\t" | "\\\n" }
 COMMENT = _{ "#" ~ (!NEWLINE ~ ANY)* }
@@ -22,6 +24,16 @@ quote = _{ "\"" }
 symbol = @{ symbol_chars ~ (symbol_chars | ASCII_DIGIT)*}
 symbol_chars = { ASCII_ALPHA | "_" }
 
+// ===============================================================================
+// Let Expressions
+// ===============================================================================
+// a fn without args is called like this: foo(), a function with args is called
+// like this: foo bar bz
+
+call = { callee ~ "()" | callee ~ expression+ }
+
+// callee will always be a subset of expression, but pest doesn't like left recursion
+callee = { symbol }
 // ===============================================================================
 // Let Expressions
 // ===============================================================================

@@ -3,6 +3,7 @@ use crate::vm::Heap;
 
 pub type Stack = Vec<RuntimeData>;
 /// Represents the 3 relevant memory areas of the VM: Heap, Stack, and Data segment
+#[derive(Default, Debug)]
 pub struct Memory {
     pub stack: Stack,
     pub heap: Heap<RuntimeValue>,
@@ -46,7 +47,7 @@ impl Memory {
     }
 
     pub unsafe fn push_data_section_ref(&mut self, idx: usize) {
-        let ptr: *const ComptimeValue = self.data_seg.get_unchecked(idx);
+        let ptr: *const ComptimeValue = self.data_seg.get(idx).unwrap();
         self.stack.push(Data::Ref(RuntimeRef::DataSecRef(ptr)));
     }
 

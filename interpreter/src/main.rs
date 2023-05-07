@@ -1,15 +1,15 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use leviscript_lib::compiler::{self, Compilable};
+use leviscript_lib::compiler::Compilable;
 use leviscript_lib::parser::{PestErrVariant, PestError, PestParser, Span};
-use leviscript_lib::vm::Memory;
+use leviscript_lib::type_inference::{infer_ast_types, inference_start, Environment, TypeIndex};
 use leviscript_lib::{core::*, parser, vm};
 
 use std::path::PathBuf;
 
-#[cfg(feature = "dev")]
-mod debugger;
+// #[cfg(feature = "dev")]
+// mod debugger;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -36,6 +36,7 @@ struct Cli {
 fn main() -> Result<()> {
     // let src = std::fs::read_to_string("../test-script/xexp.les")?;
     let cli = Cli::parse();
+    let file_name = cli.script.display().to_string();
     let src = std::fs::read_to_string(&cli.script).context(format!(
         "loading script: {}\ncwd:{}",
         cli.script.display(),
@@ -56,52 +57,60 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let intermediate = ast.compile(Scopes::default(), StackInfo::default())?;
-    #[cfg(feature = "dev")]
-    if cli.show_byte_code {
-        dbg!(&intermediate);
-        return Ok(());
-    }
-
-    let final_bc = compiler::intermediate_to_final(intermediate.clone(), ast);
-    #[cfg(feature = "dev")]
-    if cli.debug_bytecode {
-        use crossterm::{self as ct, terminal};
-        use std::io::stdout;
-
-        let mut stdout = stdout();
-        ct::execute!(stdout, terminal::EnterAlternateScreen)?;
-        let res = debugger::run(final_bc, &intermediate, &spans, &src, &mut stdout);
-        ct::execute!(stdout, terminal::LeaveAlternateScreen)?;
-        return res;
-    }
-
-    let res = match run(final_bc, &spans) {
-        Ok(res) => res,
-        Err(e) => {
-            eprintln!("{}", e);
-            1
-        }
+    let (def_env, def_t_idx) = inference_start();
+    let (_, type_index) = match infer_ast_types(&ast, def_env, def_t_idx) {
+        Ok(x) => x,
+        Err(e) => exit_with_error(&e.to_string(), e.get_ast_id(), &spans, &file_name),
     };
-    std::process::exit(res);
+    let compilation_result = ast.compile(ByteCodeBuilder::default(), &type_index);
+    match compilation_result {
+        Ok(builder) => {
+            #[cfg(feature = "dev")]
+            if cli.show_byte_code {
+                for c in builder.text {
+                    println!("{:?}", c);
+                }
+                return Ok(());
+            }
+
+            let (final_bc, debug_info) = builder.build();
+            // #[cfg(feature = "dev")]
+            // if cli.debug_bytecode {
+            //     use crossterm::{self as ct, terminal};
+            //     use std::io::stdout;
+
+            //     let mut stdout = stdout();
+            //     ct::execute!(stdout, terminal::EnterAlternateScreen)?;
+            //     let res = debugger::run(final_bc, &intermediate, &spans, &src, &mut stdout);
+            //     ct::execute!(stdout, terminal::LeaveAlternateScreen)?;
+            //     return res;
+            // }
+
+            let res = match run(final_bc, &spans, &debug_info) {
+                Ok(res) => res,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    1
+                }
+            };
+            std::process::exit(res);
+        }
+        Err(e) => {
+            exit_with_error(&e.to_string(), e.get_ast_id(), &spans, &file_name);
+        }
+    }
 }
 
-pub fn run(bc: FinalByteCode, spans: &[Span]) -> Result<i32, String> {
-    let mut mem = Memory::from(bc.data.clone());
-    let mut pc = bc.text.as_ptr();
+pub fn run(bc: ByteCode, spans: &[Span], dinfo: &DebugInformation) -> Result<i32, String> {
+    let mut runner = Runner::new(bc);
+    runner.reset_pc();
 
-    use vm::ExecOutcome::*;
     loop {
-        let disc_ptr = pc as *const u16;
-        match unsafe { OpCode::dispatch_discriminant(*disc_ptr, pc, &mut mem) } {
-            Ok(Pc(new_pc)) => {
-                pc = new_pc;
-            }
-            Ok(ExitCode(res)) => return Ok(res),
-            Err(vm::Error::Runtime(msg)) => {
-                let byte_offset = pc as usize - bc.text.as_ptr() as usize;
-                let opcode_index = bc.header.index[&byte_offset];
-                let ast_id = bc.header.ast_ids[opcode_index];
+        match unsafe { runner.step() } {
+            StepResult::Ok => {}
+            StepResult::Done(res) => return Ok(res),
+            StepResult::Err(vm::Error::Runtime(msg)) => {
+                let ast_id = runner.pc_to_ast_id(dinfo);
 
                 return Err(format!(
                     "Runtime error: {}",
@@ -111,7 +120,25 @@ pub fn run(bc: FinalByteCode, spans: &[Span]) -> Result<i32, String> {
                     )
                 ));
             }
-            Err(e) => return Err(format!("VM-Error: {}", e)),
+            StepResult::Err(e) => return Err(format!("VM-Error: {}", e)),
         }
     }
+}
+
+pub fn format_error(msg: &str, ast_id: usize, spans: &[Span], file_name: &str) -> String {
+    format!(
+        "Compilation error: {}",
+        PestError::new_from_span(
+            PestErrVariant::<parser::Rule>::CustomError {
+                message: msg.into()
+            },
+            spans[ast_id]
+        )
+        .with_path(file_name)
+    )
+}
+
+pub fn exit_with_error(msg: &str, ast_id: usize, spans: &[Span], file_name: &str) -> ! {
+    eprintln!("{}", format_error(msg, ast_id, spans, file_name));
+    std::process::exit(1);
 }

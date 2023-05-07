@@ -3,6 +3,13 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::type_inference::EnvironmentIdentifier;
+
+/// represents stuff that works with all AST-Nodes
+pub trait AstNode {
+    fn get_id(&self) -> EnvironmentIdentifier;
+}
+
 /// represents multiple phrases that are executed one after another
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Block(pub usize, pub Vec<Phrase>);
@@ -17,11 +24,11 @@ pub enum Phrase {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Expr {
     /// represents an X-Expression
-    XExpr {
-        exe: XExprAtom,
-        args: Vec<XExprAtom>,
-        id: usize,
-    },
+    // XExpr {
+    //     exe: XExprAtom,
+    //     args: Vec<XExprAtom>,
+    //     id: usize,
+    // },
     /// represents a string literal
     StrLit(usize, Vec<StrLitElem>),
     /// represents variable defintion
@@ -34,6 +41,12 @@ pub enum Expr {
     Symbol(usize, String),
     /// represents an integer literal
     IntLit(usize, i64),
+    /// represents a call to a (builtin) function
+    Call {
+        id: usize,
+        callee: Box<Expr>,
+        args: Vec<Expr>,
+    },
 }
 
 /// represents part of a string literal
@@ -49,4 +62,51 @@ pub enum StrLitElem {
 pub enum XExprAtom {
     Ref(usize, String),
     Str(usize, String),
+}
+
+impl AstNode for Block {
+    fn get_id(&self) -> EnvironmentIdentifier {
+        EnvironmentIdentifier::AstId(self.0)
+    }
+}
+
+impl AstNode for Phrase {
+    fn get_id(&self) -> EnvironmentIdentifier {
+        EnvironmentIdentifier::AstId(match self {
+            Self::Expr(id, _) => *id,
+        })
+    }
+}
+
+impl AstNode for Expr {
+    fn get_id(&self) -> EnvironmentIdentifier {
+        use Expr::*;
+        EnvironmentIdentifier::AstId(match self {
+            // XExpr { id, .. } => id,
+            StrLit(id, ..) => *id,
+            Let { id, .. } => *id,
+            Symbol(id, ..) => *id,
+            IntLit(id, ..) => *id,
+            Call { id, .. } => *id,
+        })
+    }
+}
+
+impl AstNode for StrLitElem {
+    fn get_id(&self) -> EnvironmentIdentifier {
+        EnvironmentIdentifier::AstId(match self {
+            Self::PureStrLit(id, ..) => *id,
+            Self::Symbol(id, ..) => *id,
+            Self::Expr(id, ..) => *id,
+        })
+    }
+}
+
+impl AstNode for XExprAtom {
+    fn get_id(&self) -> EnvironmentIdentifier {
+        EnvironmentIdentifier::AstId(match self {
+            Self::Ref(id, ..) => *id,
+            Self::Str(id, ..) => *id,
+        })
+    }
 }

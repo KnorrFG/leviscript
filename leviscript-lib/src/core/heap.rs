@@ -1,7 +1,3 @@
-use crate::core::*;
-
-use std::collections::HashSet;
-
 /// This Heap represents the interpreters Heap (as in memory area, not as in data structure).
 ///
 /// It is not any form of tree. The idea is, that I want to be able to insert an element into it,
@@ -15,10 +11,19 @@ use std::collections::HashSet;
 /// As this is used in the interpreter and should be as fast as possible, I use unsafe functions where it
 /// safes performance
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Heap<T> {
     data: Vec<T>,
     free_indices: Vec<usize>,
+}
+
+impl<T> Default for Heap<T> {
+    fn default() -> Self {
+        Heap {
+            data: vec![],
+            free_indices: vec![],
+        }
+    }
 }
 
 impl<T> Heap<T> {

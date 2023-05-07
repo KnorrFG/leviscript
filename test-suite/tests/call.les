@@ -1,0 +1,2 @@
+exec "echo" "ababua"
+exec "echo" "hello world" "test"

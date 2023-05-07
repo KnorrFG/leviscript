@@ -66,7 +66,7 @@ fn parse_phrase<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<P
 
 fn parse_expression<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
     span_vec.push(pair.as_span());
-    assert!(matches!(pair.as_rule(), Rule::expression));
+    assert!(matches!(pair.as_rule(), Rule::expression | Rule::callee));
 
     let child = get_single_child(pair.into_inner());
     match child.as_rule() {
@@ -75,8 +75,24 @@ fn parse_expression<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResu
         Rule::let_expr => parse_let_expr(child, span_vec),
         Rule::int_lit => parse_int_lit(child, span_vec),
         Rule::symbol => parse_symbol_expr(child, span_vec),
+        Rule::call => parse_call_expr(child, span_vec),
         _ => unreachable!(),
     }
+}
+
+fn parse_call_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
+    let id = span_vec.len();
+    span_vec.push(pair.as_span());
+    assert!(matches!(pair.as_rule(), Rule::call));
+
+    let mut children = pair.into_inner().map(|p| parse_expression(p, span_vec));
+    let callee = children.next().unwrap()?;
+    let args = children.collect::<Result<_, _>>()?;
+    Ok(Expr::Call {
+        id,
+        callee: Box::new(callee),
+        args,
+    })
 }
 
 fn parse_symbol_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
@@ -149,29 +165,35 @@ fn parse_str_lit_elem<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseRe
 fn parse_x_expression<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
     let id = span_vec.len();
     span_vec.push(pair.as_span());
+    // this is pushed twice because we will insert an Expr node for the built in call, which does not
+    // have a span. So we reuse the span of the Xexpr. Since the ID is based on the span vec, this is
+    // necessary so the symbol node can have it's own id
+    span_vec.push(pair.as_span());
     assert!(matches!(pair.as_rule(), Rule::x_expression));
 
-    let children: Vec<XExprAtom> = pair
+    let args: Vec<Expr> = pair
         .into_inner()
         .map(|p| parse_xexpr_atom(p, span_vec))
         .collect::<Result<_, _>>()?;
 
-    Ok(Expr::XExpr {
-        exe: children[0].clone(),
-        args: children[1..].to_vec(),
+    Ok(Expr::Call {
+        callee: Box::new(Expr::Symbol(id + 1, "exec".into())),
+        args,
         id,
     })
 }
 
-fn parse_xexpr_atom<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<XExprAtom> {
+fn parse_xexpr_atom<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
     let id = span_vec.len();
     span_vec.push(pair.as_span());
     assert!(matches!(pair.as_rule(), Rule::xexpr_elem));
 
     let child = get_single_child(pair.into_inner());
     Ok(match child.as_rule() {
-        Rule::symbol => XExprAtom::Ref(id, child.as_str().into()),
-        Rule::xexpr_str => XExprAtom::Str(id, child.as_str().into()),
+        Rule::symbol => Expr::Symbol(id, child.as_str().into()),
+        Rule::xexpr_str => {
+            Expr::StrLit(id, vec![StrLitElem::PureStrLit(id, child.as_str().into())])
+        }
         _ => unreachable!(),
     })
 }
