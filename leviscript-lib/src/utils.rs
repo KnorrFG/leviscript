@@ -1,5 +1,7 @@
 //! contains small utility functions that have nowhere else to go
 
+use std::fmt::Display;
+
 /// "casts" a reference to the corresponding byte-sequence
 pub fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts((p as *const T) as *const u8, ::core::mem::size_of::<T>()) }
@@ -17,4 +19,12 @@ pub fn get_version() -> [u16; 3] {
         .collect::<Vec<_>>()
         .try_into()
         .expect("Invalid version string (wrong number of dots, expected two)")
+}
+
+pub fn to_str_vec<T, ItemT>(xs: T) -> Vec<String>
+where
+    T: IntoIterator<Item = ItemT>,
+    ItemT: Display,
+{
+    xs.into_iter().map(|x| x.to_string()).collect()
 }

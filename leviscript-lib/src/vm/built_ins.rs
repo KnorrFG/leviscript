@@ -111,7 +111,9 @@ where
     }
     let d1 = pop_stack(mem, f_name)?;
     let a1 = get_data_as(&d1)?;
-    f(a1, args)
+    f(a1, args)?;
+    mem.store(CopyValue::Unit.into());
+    Ok(())
 }
 
 /// pops data from the stack, and casts the StackEntry to RuntimeData.

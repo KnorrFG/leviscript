@@ -3,13 +3,13 @@ use clap::Parser;
 
 use leviscript_lib::compiler::Compilable;
 use leviscript_lib::parser::{PestErrVariant, PestError, PestParser, Span};
-use leviscript_lib::type_inference::{infer_ast_types, inference_start, Environment, TypeIndex};
+use leviscript_lib::type_inference::{infer_ast_types, inference_start};
 use leviscript_lib::{core::*, parser, vm};
 
 use std::path::PathBuf;
 
-// #[cfg(feature = "dev")]
-// mod debugger;
+#[cfg(feature = "dev")]
+mod debugger;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -73,18 +73,19 @@ fn main() -> Result<()> {
                 return Ok(());
             }
 
+            #[cfg(feature = "dev")]
+            let opcodes: Vec<OpCode> = builder.text.iter().cloned().collect();
             let (final_bc, debug_info) = builder.build();
-            // #[cfg(feature = "dev")]
-            // if cli.debug_bytecode {
-            //     use crossterm::{self as ct, terminal};
-            //     use std::io::stdout;
+            #[cfg(feature = "dev")]
+            if cli.debug_bytecode {
+                use crossterm::{self as ct, terminal};
+                use std::io::stdout;
 
-            //     let mut stdout = stdout();
-            //     ct::execute!(stdout, terminal::EnterAlternateScreen)?;
-            //     let res = debugger::run(final_bc, &intermediate, &spans, &src, &mut stdout);
-            //     ct::execute!(stdout, terminal::LeaveAlternateScreen)?;
-            //     return res;
-            // }
+                ct::execute!(stdout(), terminal::EnterAlternateScreen)?;
+                let res = debugger::run(final_bc, debug_info, &opcodes, &spans, &src);
+                ct::execute!(stdout(), terminal::LeaveAlternateScreen)?;
+                return res;
+            }
 
             let res = match run(final_bc, &spans, &debug_info) {
                 Ok(res) => res,

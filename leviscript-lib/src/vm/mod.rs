@@ -108,6 +108,22 @@ pub unsafe fn exec_strcat(pc: *const u8, mem: &mut Memory) -> ExecResult {
     ok_pc!(pc.offset(isize_of!(STRCAT)))
 }
 
+pub unsafe fn exec_tostr(pc: *const u8, mem: &mut Memory) -> ExecResult {
+    let val = mem.stack.pop().unwrap();
+    mem.push_heap(val.to_string());
+    ok_pc!(pc.offset(isize_of!(TOSTR)))
+}
+
+pub unsafe fn exec_tobool(pc: *const u8, mem: &mut Memory) -> ExecResult {
+    let val = mem.stack.pop().unwrap();
+    match val {
+        Data::CopyVal(CopyValue::Bool(b)) => mem.push_stack(b),
+        Data::CopyVal(CopyValue::Unit) => mem.push_stack(false),
+        _ => mem.push_stack(true),
+    }
+    ok_pc!(pc.offset(isize_of!(TOBOOL)))
+}
+
 pub unsafe fn exec_exit(pc: *const u8, _: &mut Memory) -> ExecResult {
     let res = get_body!(Exit, pc.offset(2));
     Ok(ExecOutcome::ExitCode(*res))

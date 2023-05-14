@@ -9,11 +9,14 @@
 //! During compilation, the compiler will know the scope of a value that a ref points to,
 //! and make sure to return the value too, if a ref to value of the current scopr is returned
 
+use core::fmt;
 use im::{HashMap, HashSet, Vector};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::hash::Hash;
+
+use crate::utils;
 
 pub trait RefRequirements: Debug + Clone + PartialEq + Eq + Hash {}
 
@@ -28,7 +31,7 @@ pub enum Value<RefT: RefRequirements> {
     Set(HashSet<Data<RefT>>),
 }
 
-pub type ComptimeValue = Value<()>;
+pub type ComptimeValue = Value<ComptimeRef>;
 pub type RuntimeValue = Value<RuntimeRef>;
 
 // Holds copy values
@@ -54,13 +57,19 @@ pub enum Data<RefT> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RuntimeRef {
     HeapRef(*const Value<Self>),
-    DataSecRef(*const Value<()>),
+    DataSecRef(*const Value<ComptimeRef>),
 }
 
-impl RefRequirements for RuntimeRef {}
-impl RefRequirements for () {}
+// Comptime refs don't exist, so this should be `!`. That isn't stable yet.
+// So it could be `()` instead, but that doesn implement Display, which I require, if I dont
+// want to get even deeper into generics hell. So we have this
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ComptimeRef;
 
-pub type ComptimeData = Data<()>;
+impl RefRequirements for RuntimeRef {}
+impl RefRequirements for ComptimeRef {}
+
+pub type ComptimeData = Data<ComptimeRef>;
 pub type RuntimeData = Data<RuntimeRef>;
 
 pub trait TryFromRef<SrcT>: Sized {
@@ -80,6 +89,52 @@ impl<Implementor, T: TryFromRef<Implementor>> TryIntoRef<T> for Implementor {
     }
 }
 
+impl<RefT: RefRequirements + Display> Display for Value<RefT> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Value::Str(s) => write!(f, "{}", s),
+            Value::Vec(v) => write!(f, "[{}]", utils::to_str_vec(v).join(", ")),
+            Value::Set(s) => write!(f, "s[{}]", utils::to_str_vec(s).join(", ")),
+            Value::Dict(d) => {
+                write!(
+                    f,
+                    "d[{}]",
+                    d.iter()
+                        .map(|(k, v)| format!("{} = {}", k, v))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            }
+            Value::Keyword(kw) => write!(f, ":{}", kw),
+        }
+    }
+}
+
+impl<RefT: RefRequirements + Display> Display for Data<RefT> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Data::CopyVal(cv) => Display::fmt(cv, f),
+            Data::Ref(r) => Display::fmt(r, f),
+        }
+    }
+}
+
+impl Display for RuntimeRef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        unsafe {
+            match self {
+                RuntimeRef::HeapRef(p) => Display::fmt(&**p, f),
+                RuntimeRef::DataSecRef(v) => Display::fmt(&**v, f),
+            }
+        }
+    }
+}
+
+impl Display for ComptimeRef {
+    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
+        panic!("this should never be called");
+    }
+}
 // ==============================================================================
 // Copy Value
 // ==============================================================================
@@ -182,6 +237,17 @@ impl<T: TryFrom<CopyValue>> TryFromRef<CopyValue> for T {
     }
 }
 
+impl Display for CopyValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CopyValue::Bool(b) => write!(f, "{}", b),
+            CopyValue::Unit => write!(f, "()"),
+            CopyValue::Int(i) => write!(f, "{}", i),
+            CopyValue::Float(fl) => write!(f, "{}", fl),
+        }
+    }
+}
+
 // ==============================================================================
 // TryFromRef<Value<RefT>>
 // ==============================================================================
@@ -219,7 +285,7 @@ impl<T> TryFromRef<()> for T {
 
 impl<T> TryFromRef<RuntimeRef> for T
 where
-    T: TryFromRef<Value<RuntimeRef>> + TryFromRef<Value<()>>,
+    T: TryFromRef<Value<RuntimeRef>> + TryFromRef<Value<ComptimeRef>>,
 {
     unsafe fn try_from_ref(s: &RuntimeRef) -> Option<Self> {
         match s {
@@ -229,7 +295,7 @@ where
     }
 }
 
-// i wanted to to it for all T: CopyValue, but for some reason that conflicts with the above definition
+// i wanted to do it for all T: CopyValue, but for some reason that conflicts with the above definition
 // even though Copy val is implemented for: i64, f64, bool, ()
 // and TryFromRef<Value<RuntimeRef>> is implemented for *const String and Vec<T>
 impl TryFromRef<RuntimeRef> for i64 {
@@ -256,6 +322,12 @@ impl<RefT, TargetT: TryFromRef<RefT> + TryFromRef<CopyValue>> TryFromRef<Data<Re
 impl<T> From<CopyValue> for Data<T> {
     fn from(value: CopyValue) -> Self {
         Self::CopyVal(value)
+    }
+}
+
+impl<T> From<bool> for Data<T> {
+    fn from(value: bool) -> Self {
+        Self::CopyVal(CopyValue::Bool(value))
     }
 }
 

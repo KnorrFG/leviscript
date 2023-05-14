@@ -1,10 +1,11 @@
-use std::io::{Stdout, Write};
+use std::io::{stdout, Stdout, Write};
+use std::iter;
 
 use anyhow::{anyhow, bail, Result};
 use crossterm::{self as ct, terminal};
 use leviscript_lib::core::*;
 use leviscript_lib::parser::{self, PestErrVariant, PestError, Span};
-use leviscript_lib::vm::{self, Memory};
+use leviscript_lib::vm;
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 #[derive(PartialEq, Clone)]
@@ -19,23 +20,22 @@ enum UserCommand {
 }
 
 pub fn run(
-    final_bc: FinalByteCode,
-    im_bc: &ImByteCode,
+    bc: ByteCode,
+    debug_info: DebugInformation,
+    opcodes: &[OpCode],
     spans: &[Span],
     src: &str,
-    stdout: &mut Stdout,
 ) -> Result<()> {
-    let mut mem = Memory::from(final_bc.data.clone());
-    let mut pc = final_bc.text.as_ptr();
+    let mut runner = Runner::new(bc);
+    runner.reset_pc();
     let mut rl = DefaultEditor::new()?;
     let mut last_cmd = None;
 
-    use vm::ExecOutcome::*;
     use UserCommand::*;
     loop {
         // print_next_instruction(final_bc, im_bc, pc);
-        render_state(stdout, &mem.stack, im_bc, &final_bc, src, pc)?;
-        stdout.flush()?;
+        render_state(&runner, &debug_info, opcodes, src)?;
+        stdout().flush()?;
         let mut cmd = read_line(&mut rl)?;
         if cmd == UserCommand::LastCommand && last_cmd.is_some() {
             cmd = last_cmd.clone().unwrap();
@@ -45,46 +45,41 @@ pub fn run(
                 // This is only reached, if there was no last command, in which case it's
                 // a noop
             }
-            Next => {
-                let disc_ptr = pc as *const u16;
-                match unsafe { OpCode::dispatch_discriminant(*disc_ptr, pc, &mut mem) } {
-                    Ok(Pc(new_pc)) => {
-                        pc = new_pc;
-                    }
-                    Ok(ExitCode(_)) => return Ok(()),
-                    Err(vm::Error::Runtime(msg)) => {
-                        let ast_id = final_bc.pc_to_ast_id(pc);
-                        bail!(
-                            "Runtime error: {}",
-                            PestError::new_from_span(
-                                PestErrVariant::<parser::Rule>::CustomError { message: msg },
-                                spans[ast_id]
-                            )
-                        );
-                    }
-                    Err(e) => bail!("VM-Error: {}", e),
+            Next => match unsafe { runner.step() } {
+                StepResult::Ok => {}
+                StepResult::Done(_) => return Ok(()),
+                StepResult::Err(vm::Error::Runtime(msg)) => {
+                    let ast_id = runner.pc_to_ast_id(&debug_info);
+                    bail!(
+                        "Runtime error: {}",
+                        PestError::new_from_span(
+                            PestErrVariant::<parser::Rule>::CustomError { message: msg },
+                            spans[ast_id]
+                        )
+                    );
                 }
-            }
+                StepResult::Err(e) => bail!("VM-Error: {}", e),
+            },
             ShowStack => {
-                for (i, elem) in mem.stack.iter().enumerate().rev() {
+                for (i, elem) in runner.mem.stack.iter().enumerate().rev() {
                     println!("{}: {:?}", i, elem);
                 }
             }
             ShowData => {
-                for (i, elem) in final_bc.data.iter().enumerate() {
+                for (i, elem) in runner.mem.data_seg.iter().enumerate() {
                     println!("{}: {:?}", i, elem);
                 }
             }
             ShowStackAt(i) => {
-                if *i < mem.stack.len() {
-                    println!("{:?}", mem.stack[*i]);
+                if *i < runner.mem.stack.len() {
+                    println!("{:?}", runner.mem.stack[*i]);
                 } else {
                     println!("Invalid stack index");
                 }
             }
             ShowDataAt(i) => {
-                if *i < final_bc.data.len() {
-                    println!("{:?}", final_bc.data[*i]);
+                if *i < runner.mem.data_seg.len() {
+                    println!("{:?}", runner.mem.data_seg[*i]);
                 } else {
                     println!("Invalid data index");
                 }
@@ -119,6 +114,7 @@ fn parse_line(line: &str) -> Result<UserCommand> {
         match elems[0] {
             "n" | "next" => Ok(Next),
             "s" | "show" => parse_show(&elems[1..]),
+            "q" | "quit" => Ok(Quit),
             _ => Err(anyhow!("Invalid Command")),
         }
     } else {
@@ -147,9 +143,9 @@ fn parse_show(elems: &[&str]) -> Result<UserCommand> {
     }
 }
 
-fn print_next_instruction(final_bc: &FinalByteCode, im_bc: &ImByteCode, pc: *const u8) {
-    let instruction_index = final_bc.pc_to_index(pc);
-    let instructions = im_bc.text.iter().enumerate();
+fn print_next_instruction(runner: &Runner, debug_info: &DebugInformation, opcodes: &[OpCode]) {
+    let instruction_index = runner.current_bc_index(debug_info);
+    let instructions = opcodes.iter().enumerate();
     println!("Next instructions:");
     for (i, inst) in instructions.skip(instruction_index).take(5) {
         println!("{}: {:?}", i, inst);
@@ -168,6 +164,7 @@ struct Rects {
     bc: Rect,
     src: Rect,
     stack: Rect,
+    heap: Rect,
     data: Rect,
 }
 
@@ -199,19 +196,19 @@ impl Rect {
 }
 
 fn render_state(
-    stdout: &mut Stdout,
-    stack: &Vec<RuntimeData>,
-    bc_im: &ImByteCode,
-    bc_final: &FinalByteCode,
+    runner: &Runner,
+    debug_info: &DebugInformation,
+    opcodes: &[OpCode],
     src: &str,
-    pc: *const u8,
 ) -> Result<()> {
     let curr_cursor = ct::cursor::position()?;
     let term_size = terminal::size()?;
     let rects = compute_rects(term_size);
-    render_bc(stdout, &rects.bc, bc_im, bc_final.pc_to_index(pc))?;
-    render_stack(stdout, &rects.stack, stack)?;
-    render_data(stdout, &rects.data, &bc_im.data)?;
+    let stdout = &mut stdout();
+    render_bc(stdout, &rects.bc, runner, debug_info, opcodes)?;
+    render_stack(stdout, &rects.stack, &runner.mem.stack)?;
+    render_heap(stdout, &rects.heap, &runner.mem.heap)?;
+    render_data(stdout, &rects.data, &runner.mem.data_seg)?;
     render_src(stdout, &rects.src, &src)?;
     ct::queue!(stdout, ct::cursor::MoveTo(curr_cursor.0, curr_cursor.1))?;
     Ok(())
@@ -252,12 +249,26 @@ fn render_stack(stdout: &mut Stdout, rect: &Rect, stack: &vm::Stack) -> Result<(
     Ok(())
 }
 
-fn render_bc(stdout: &mut Stdout, bc_rect: &Rect, bc_im: &ImByteCode, pc_idx: usize) -> Result<()> {
-    let lines = bc_im
-        .text
+fn render_heap(stdout: &mut Stdout, rect: &Rect, heap: &Heap<RuntimeValue>) -> Result<()> {
+    let lines = iter::once("Heap:".to_string()).chain(
+        heap.iter()
+            .map(|entry| format!("{:#X}: {:?}", entry as *const RuntimeValue as usize, entry)),
+    );
+    rect.render(stdout, lines)?;
+    Ok(())
+}
+
+fn render_bc(
+    stdout: &mut Stdout,
+    bc_rect: &Rect,
+    runner: &Runner,
+    debug_info: &DebugInformation,
+    opcodes: &[OpCode],
+) -> Result<()> {
+    let lines = opcodes
         .iter()
         .enumerate()
-        .skip(pc_idx)
+        .skip(runner.current_bc_index(debug_info))
         .map(|(i, inst)| format!("{}: {:?}", i, inst));
     bc_rect.render(stdout, lines)
 }
@@ -269,6 +280,8 @@ fn compute_rects((term_w, term_h): (u16, u16)) -> Rects {
     let height45 = term_h * 4 / 5;
     let height15 = term_h / 5;
     let height12 = term_h / 2;
+    let height13 = term_h / 3;
+    let height23 = height13 * 2;
 
     Rects {
         input: Rect {
@@ -293,13 +306,19 @@ fn compute_rects((term_w, term_h): (u16, u16)) -> Rects {
             x: width34,
             y: 0,
             w: width14,
-            h: height12,
+            h: height13,
+        },
+        heap: Rect {
+            x: width34,
+            y: height13,
+            w: width14,
+            h: height13,
         },
         data: Rect {
             x: width34,
-            y: height12,
+            y: height23,
             w: width14,
-            h: height12,
+            h: height13,
         },
     }
 }

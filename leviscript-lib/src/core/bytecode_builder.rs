@@ -68,6 +68,19 @@ impl DataTypeInfo {
     pub fn int() -> Self {
         Self::StackType(StackType::Int)
     }
+
+    pub fn into_datatype(self) -> DataType {
+        match self {
+            DataTypeInfo::DataSecTypeInfo { dtype, .. }
+            | DataTypeInfo::HeapTypeInfo { dtype, .. } => DataType::HeapType(dtype),
+            DataTypeInfo::StackType(st) => DataType::StackType(st),
+            DataTypeInfo::CallableType(ct, sign) => DataType::Callable(ct, sign),
+        }
+    }
+
+    pub fn sattisfies(&self, dtype: &DataType) -> bool {
+        self.clone().into_datatype().sattisfies(dtype)
+    }
 }
 
 impl ByteCodeBuilder {
@@ -151,8 +164,13 @@ impl ByteCodeBuilder {
             // n - args + the entry that tells the number of args
             self.pop_stack_entries(n + 1);
         }
-        match &sign.result {
-            DataType::StackType(StackType::Unit) => {}
+        self.create_value_in_memory(&sign.result, ast_id);
+    }
+
+    /// updates stack and heap info accordingly, depending on the type
+    /// use the ast_id of the expression that created the value
+    pub fn create_value_in_memory(&mut self, dtype: &DataType, ast_id: usize) {
+        match dtype {
             DataType::StackType(stack_type) => {
                 self.stack_info.push_back(DataInfo {
                     ast_id,
@@ -170,6 +188,44 @@ impl ByteCodeBuilder {
                 })
             }
             DataType::Callable(_, _) => unimplemented!(),
+        }
+    }
+
+    /// If the stack top is not compatible with the target type, try to fix it.
+    ///
+    /// If the types don't match, check whether there is a valid cast, if so,
+    /// insert instructions to handle it into text.
+    ///
+    /// Returns whether everything is fine. A return value of false should produce
+    /// a compiler error
+    pub fn check_and_fix_type_of_stack_top(&mut self, target_type: &DataType) -> bool {
+        let current_type = self
+            .stack_info
+            .last()
+            .expect("attempted to access stack info, when stack was empty. This is a compiler bug")
+            .type_info
+            .clone()
+            .into_datatype();
+        if current_type.sattisfies(target_type) {
+            // types already match
+            true
+        } else {
+            // types don't match, but maybe there's a cast
+            let maybe_opcode = match target_type {
+                DataType::HeapType(HeapType::Str) => Some(OpCode::ToStr),
+                DataType::StackType(StackType::Bool) => Some(OpCode::ToBool),
+                _ => OpCode::get_cast(&current_type, target_type),
+            };
+            if let Some(code) = maybe_opcode {
+                // There is a cast. Apply and return true.
+                self.text.push_back(code);
+                let old_entry = self.stack_info.pop_back().unwrap();
+                self.create_value_in_memory(target_type, old_entry.ast_id);
+                true
+            } else {
+                // There is no cast. Type error
+                false
+            }
         }
     }
 

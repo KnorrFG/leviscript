@@ -45,6 +45,12 @@ impl From<CopyValue> for StackType {
     }
 }
 
+impl From<HeapType> for DataType {
+    fn from(value: HeapType) -> Self {
+        Self::HeapType(value)
+    }
+}
+
 impl DataType {
     pub fn vec(self) -> Self {
         Self::HeapType(HeapType::Vec(Box::new(self)))
@@ -57,6 +63,12 @@ impl DataType {
     }
     pub fn int() -> Self {
         Self::StackType(StackType::Int)
+    }
+
+    pub fn sattisfies(&self, other: &Self) -> bool {
+        // this will become more complex later, once the more advanced type system features are
+        // added
+        self == other
     }
 }
 
@@ -96,6 +108,18 @@ impl Signature {
         Self {
             var_arg: Some(var_arg),
             ..self
+        }
+    }
+
+    pub fn is_sattisfied_by(&self, args: &Vec<DataType>) -> bool {
+        if self.args != *args {
+            return false;
+        }
+
+        if let Some(t) = &self.var_arg {
+            args.iter().skip(self.args.len()).all(|dt| dt == t)
+        } else {
+            true
         }
     }
 }

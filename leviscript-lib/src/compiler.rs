@@ -21,13 +21,29 @@ pub enum CompilationError {
 
     #[error("A compiler bug was detected: {msg}")]
     CompilerBug { ast_id: usize, msg: String },
+
+    #[error("Found {found:?} arguments, expected {expected:?}")]
+    ArgCount {
+        ast_id: usize,
+        found: Vec<DataType>,
+        expected: Signature,
+    },
+
+    #[error("Argument is of type {actual:?} but needs to be {expected:?}")]
+    TypeError {
+        ast_id: usize,
+        actual: DataType,
+        expected: DataType,
+    },
 }
 
 impl CompilationError {
     pub fn get_ast_id(&self) -> usize {
         match self {
             Self::UndefinedSymbol { ast_id, .. } => *ast_id,
-            CompilationError::CompilerBug { ast_id, .. } => *ast_id,
+            Self::CompilerBug { ast_id, .. } => *ast_id,
+            Self::ArgCount { ast_id, .. } => *ast_id,
+            Self::TypeError { ast_id, .. } => *ast_id,
         }
     }
 }
@@ -74,8 +90,30 @@ impl Compilable for Expr {
                 let opcode = vm::built_ins::opcode(callee_name)
                     .expect(&format!("invalid builtin: {}", callee_name));
                 let old_builder = builder.clone();
-                for a in args {
+                for (a, t) in args.iter().zip(&callee_sign.args) {
                     builder = a.compile(builder, expr_types)?;
+                    if !builder.check_and_fix_type_of_stack_top(&t) {
+                        return Err(CompilationError::TypeError {
+                            ast_id: a.get_id().into(),
+                            actual: expr_types.get(&a.get_id()).unwrap().clone(),
+                            expected: t.clone(),
+                        });
+                    }
+                }
+
+                // The above loop will not compile the expressions for the variadic arguments.
+                // because zip stops at the shorter iter, so this needs to be done here
+                if let Some(t) = &callee_sign.var_arg {
+                    for arg in args.iter().skip(callee_sign.args.len()) {
+                        builder = arg.compile(builder, expr_types)?;
+                        if !builder.check_and_fix_type_of_stack_top(&t) {
+                            return Err(CompilationError::TypeError {
+                                ast_id: arg.get_id().into(),
+                                actual: expr_types.get(&arg.get_id()).unwrap().clone(),
+                                expected: t.clone(),
+                            });
+                        }
+                    }
                 }
                 assert!(
                     builder.stack_info.len() == old_builder.stack_info.len() + args.len(),

@@ -17,6 +17,11 @@ pub struct Heap<T> {
     free_indices: Vec<usize>,
 }
 
+pub struct Iter<'a, T> {
+    heap: &'a Heap<T>,
+    pos: Option<usize>,
+}
+
 impl<T> Default for Heap<T> {
     fn default() -> Self {
         Heap {
@@ -50,5 +55,24 @@ impl<T> Heap<T> {
 
     pub unsafe fn get(&self, i: usize) -> &T {
         self.data.get_unchecked(i)
+    }
+
+    pub fn iter<'a>(&'a self) -> Iter<'a, T> {
+        let pos = (0..self.data.len()).find(|i| !self.free_indices.contains(i));
+        Iter { heap: self, pos }
+    }
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(i) = &mut self.pos {
+            let res = self.heap.data.get(*i);
+            self.pos = (*i + 1..self.heap.data.len()).find(|i| !self.heap.free_indices.contains(i));
+            res
+        } else {
+            None
+        }
     }
 }

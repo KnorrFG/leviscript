@@ -26,6 +26,8 @@ pub enum OpCode {
     /// makes a copy of the entry at the given index and puts it on top of the stack
     RepushStackEntry(usize),
     DeleteOnHeap(usize),
+    ToStr,
+    ToBool,
     Exec,
     StrCat,
 }
@@ -42,5 +44,11 @@ impl OpCode {
             PushDataSecRef(r) => *r += offset,
             _ => {}
         };
+    }
+
+    pub fn get_cast(from: &DataType, to: &DataType) -> Option<Self> {
+        match (from, to) {
+            _ => None,
+        }
     }
 }
