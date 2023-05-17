@@ -186,10 +186,9 @@ impl Compilable for Expr {
                 builder.pop_stack_entries(n);
 
                 // there will the str on the heap and the ref to that str on the Stack
-                let heap_idx = builder.heap_state.push(());
                 builder.stack_info.push_back(DataInfo {
                     ast_id: *id,
-                    type_info: DataTypeInfo::str(heap_idx),
+                    type_info: DataTypeInfo::str(),
                 });
                 builder
             }

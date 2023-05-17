@@ -1,5 +1,4 @@
 use crate::core::*;
-use derive_more::Constructor;
 use im::Vector;
 
 /// represents byte code while it's being built
@@ -17,24 +16,10 @@ pub struct ByteCodeBuilder {
     pub data: Vector<ComptimeValue>,
     /// AST node from which the corresponding OpCode was generated
     pub ast_ids: Vector<usize>,
-    /// Scoped table from symbol name to ast id of the expression that
-    /// generated the symbols value. Can be used to look up information about that
-    /// symbol in the expr_types tables
-    pub symbol_table: Scopes<String, SymbolInfo>,
+    /// Scoped table from symbol name to stack index
+    pub symbol_table: Scopes<String, usize>,
     /// Represents the state that the stack will have when the contained code is run.
     pub stack_info: Vector<DataInfo>,
-    /// The heap_state simulates the state of the heap at runtime. We insert a dummy value
-    /// during compilation to get the id the actual value will have at runtime. (Ofc it's also
-    /// neccessary to delete values at compile time when they would be deleted at runtime, so the
-    /// IDs stay in sync)
-    pub heap_state: Heap<()>,
-}
-
-/// Util type for the Builder
-#[derive(Debug, Clone, Constructor)]
-pub struct SymbolInfo {
-    pub dinfo: DataInfo,
-    stack_idx: usize,
 }
 
 /// Util type for the Builder
@@ -49,19 +34,39 @@ pub struct DataInfo {
 /// Some types live on the heap, and some don't I want a heap idx for those who do,
 /// And I don't want one for those who don't. With an Option<usize> you can store a heap idx
 /// for a stack type. This way it's not possible
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum DataTypeInfo {
     DataSecTypeInfo { dtype: HeapType, dsec_idx: usize },
-    HeapTypeInfo { dtype: HeapType, heap_idx: usize },
+    HeapTypeInfo { dtype: HeapType, is_owner: bool },
     StackType(StackType),
     CallableType(CallableType, Box<Signature>),
 }
 
+impl Clone for DataTypeInfo {
+    fn clone(&self) -> Self {
+        match self {
+            DataTypeInfo::DataSecTypeInfo {
+                dtype: t,
+                dsec_idx: i,
+            } => DataTypeInfo::DataSecTypeInfo {
+                dtype: t.clone(),
+                dsec_idx: *i,
+            },
+            DataTypeInfo::HeapTypeInfo { dtype, .. } => DataTypeInfo::HeapTypeInfo {
+                dtype: dtype.clone(),
+                is_owner: false,
+            },
+            DataTypeInfo::StackType(t) => DataTypeInfo::StackType(t.clone()),
+            DataTypeInfo::CallableType(t, s) => DataTypeInfo::CallableType(t.clone(), s.clone()),
+        }
+    }
+}
+
 impl DataTypeInfo {
-    pub fn str(heap_idx: usize) -> Self {
+    pub fn str() -> Self {
         Self::HeapTypeInfo {
             dtype: HeapType::Str,
-            heap_idx,
+            is_owner: true,
         }
     }
 
@@ -86,14 +91,12 @@ impl DataTypeInfo {
 impl ByteCodeBuilder {
     /// creates an entry in the symbol table for the current top value on the stack
     pub fn add_symbol_for_stack_top(&mut self, symbol_name: &str) {
-        let info = self
-            .stack_info
-            .back()
-            .expect("tried to create symbol for stack top while stack was empty");
-        self.symbol_table.add_entry(
-            symbol_name.into(),
-            SymbolInfo::new(info.clone(), self.stack_info.len() - 1),
-        )
+        assert!(
+            !self.stack_info.is_empty(),
+            "tried to create symbol for stack top while stack was empty"
+        );
+        self.symbol_table
+            .add_entry(symbol_name.into(), self.stack_info.len() - 1)
     }
 
     pub fn add_symbol_alias(&mut self, symbol_name: &str, alias: &str) -> Result<(), ()> {
@@ -118,11 +121,10 @@ impl ByteCodeBuilder {
     /// finds the stack index for the symbol and pushes an instruction to the text that coppies
     /// that entry to the stack top
     pub fn copy_symbol_target_to_stack_top(&mut self, symbol: &str) -> Result<(), ()> {
-        let entry = self.symbol_table.find_entry(symbol).ok_or(())?;
-        self.text
-            .push_back(OpCode::RepushStackEntry(entry.stack_idx));
+        let entry_idx = self.symbol_table.find_entry(symbol).ok_or(())?;
+        self.text.push_back(OpCode::RepushStackEntry(*entry_idx));
         self.stack_info
-            .push_back(self.stack_info[entry.stack_idx].clone());
+            .push_back(self.stack_info[*entry_idx].clone());
         Ok(())
     }
 
@@ -177,16 +179,13 @@ impl ByteCodeBuilder {
                     type_info: DataTypeInfo::StackType(stack_type.clone()),
                 });
             }
-            DataType::HeapType(heap_type) => {
-                let heap_idx = self.heap_state.push(());
-                self.stack_info.push_back(DataInfo {
-                    ast_id,
-                    type_info: DataTypeInfo::HeapTypeInfo {
-                        dtype: heap_type.clone(),
-                        heap_idx,
-                    },
-                })
-            }
+            DataType::HeapType(heap_type) => self.stack_info.push_back(DataInfo {
+                ast_id,
+                type_info: DataTypeInfo::HeapTypeInfo {
+                    dtype: heap_type.clone(),
+                    is_owner: true,
+                },
+            }),
             DataType::Callable(_, _) => unimplemented!(),
         }
     }
