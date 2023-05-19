@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 /// This Heap represents the interpreters Heap (as in memory area, not as in data structure).
 ///
 /// It is not any form of tree. The idea is, that I want to be able to insert an element into it,
@@ -15,6 +17,8 @@
 pub struct Heap<T> {
     data: Vec<T>,
     free_indices: Vec<usize>,
+    /// maps pointers to indices
+    addrs: BTreeMap<*const T, usize>,
 }
 
 pub struct Iter<'a, T> {
@@ -24,10 +28,7 @@ pub struct Iter<'a, T> {
 
 impl<T> Default for Heap<T> {
     fn default() -> Self {
-        Heap {
-            data: vec![],
-            free_indices: vec![],
-        }
+        Self::new()
     }
 }
 
@@ -36,20 +37,24 @@ impl<T> Heap<T> {
         Self {
             data: vec![],
             free_indices: vec![],
+            addrs: BTreeMap::new(),
         }
     }
 
     pub fn push(&mut self, val: T) -> usize {
-        if let Some(idx) = self.free_indices.pop() {
+        let idx = if let Some(idx) = self.free_indices.pop() {
             self.data[idx] = val;
             idx
         } else {
             self.data.push(val);
             self.data.len() - 1
-        }
+        };
+        self.addrs.insert(&self.data[idx], idx);
+        idx
     }
 
     pub fn delete(&mut self, idx: usize) {
+        // deleting the addr would cost time without use
         self.free_indices.push(idx);
     }
 
@@ -60,6 +65,11 @@ impl<T> Heap<T> {
     pub fn iter<'a>(&'a self) -> Iter<'a, T> {
         let pos = (0..self.data.len()).find(|i| !self.free_indices.contains(i));
         Iter { heap: self, pos }
+    }
+
+    pub unsafe fn free(&mut self, p: *const T) {
+        let idx = self.addrs.get(&p).unwrap();
+        self.delete(*idx);
     }
 }
 

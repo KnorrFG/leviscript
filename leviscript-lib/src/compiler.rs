@@ -90,6 +90,7 @@ impl Compilable for Expr {
                 let opcode = vm::built_ins::opcode(callee_name)
                     .expect(&format!("invalid builtin: {}", callee_name));
                 let old_builder = builder.clone();
+                builder.open_scope();
                 for (a, t) in args.iter().zip(&callee_sign.args) {
                     builder = a.compile(builder, expr_types)?;
                     if !builder.check_and_fix_type_of_stack_top(&t) {
@@ -128,7 +129,8 @@ impl Compilable for Expr {
                     builder.push_primitive_to_stack(n.into(), *id);
                 }
                 builder.text.push_back(opcode);
-                builder.adjust_memory_for_call(callee_sign, n_var_args, *id);
+                builder.create_value_in_memory(&callee_sign.result, *id);
+                builder.collapse_scope();
                 builder
             }
             Let {
@@ -156,6 +158,7 @@ impl Compilable for Expr {
             StrLit(id, elems) => {
                 use StrLitElem::*;
                 let n = elems.len();
+                builder.open_scope();
                 for e in elems {
                     match &e {
                         PureStrLit(id, val) => {
@@ -177,19 +180,11 @@ impl Compilable for Expr {
                         }
                     }
                 }
-                builder
-                    .text
-                    .push_back(OpCode::PushPrimitive(CopyValue::Int(n as i64)));
+                builder.push_primitive_to_stack(n.into(), *id);
                 builder.text.push_back(OpCode::StrCat);
-                // strcat will consume n stack entries. The n itself wasn't registered with the stack Info,
-                // so there is no need to unregister it
-                builder.pop_stack_entries(n);
-
                 // there will the str on the heap and the ref to that str on the Stack
-                builder.stack_info.push_back(DataInfo {
-                    ast_id: *id,
-                    type_info: DataTypeInfo::str(),
-                });
+                builder.create_value_in_memory(&DataType::str(), *id);
+                builder.collapse_scope();
                 builder
             }
             Symbol(ast_id, name) => {

@@ -8,6 +8,7 @@ pub struct Memory {
     pub stack: Stack,
     pub heap: Heap<RuntimeValue>,
     pub data_seg: Vec<ComptimeValue>,
+    pub registers: [RuntimeData; 1],
 }
 
 pub enum Storable {
@@ -21,6 +22,7 @@ impl From<Vec<ComptimeValue>> for Memory {
             stack: vec![],
             heap: Heap::new(),
             data_seg: value,
+            registers: Default::default(),
         }
     }
 }
@@ -46,6 +48,12 @@ impl Memory {
         }
     }
 
+    /// returns refs to the stack from the back. 0 is the last element,
+    /// 1 is the second to last etc
+    pub fn stack_back(&self, ridx: usize) -> &RuntimeData {
+        &self.stack[self.stack.len() - 1 - ridx]
+    }
+
     pub unsafe fn push_data_section_ref(&mut self, idx: usize) {
         let ptr: *const ComptimeValue = self.data_seg.get(idx).unwrap();
         self.stack.push(Data::Ref(RuntimeRef::DataSecRef(ptr)));
@@ -61,6 +69,22 @@ impl Memory {
             Storable::OnHeap(x) => self.push_heap(x),
             Storable::OnStack(x) => self.push_stack(x),
         }
+    }
+
+    pub fn stack_top_to_reg(&mut self, reg: u8) {
+        self.registers[reg as usize] = self.stack[self.stack.len() - 1].clone();
+    }
+
+    pub fn read_reg(&mut self, reg: u8) {
+        self.stack.push(self.registers[reg as usize].clone());
+    }
+
+    pub fn pop_free(&mut self) {
+        let r = self.stack.pop().unwrap();
+        let Data::Ref(RuntimeRef::HeapRef(addr)) = r else {
+            panic!("Pop_free found: {:#?}", r);
+        };
+        unsafe { self.heap.free(addr) };
     }
 }
 

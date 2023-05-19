@@ -147,8 +147,24 @@ pub unsafe fn exec_repushstackentry(pc: *const u8, mem: &mut Memory) -> ExecResu
     ok_pc!(pc.offset(isize_of!(REPUSHSTACKENTRY)))
 }
 
-pub unsafe fn exec_deleteonheap(pc: *const u8, mem: &mut Memory) -> ExecResult {
-    let idx = get_body!(DeleteOnHeap, pc.offset(2));
-    mem.heap.delete(*idx);
-    ok_pc!(pc.offset(isize_of!(DELETEONHEAP)))
+pub unsafe fn exec_stacktoptoreg(pc: *const u8, mem: &mut Memory) -> ExecResult {
+    let idx = get_body!(StackTopToReg, pc.offset(2));
+    mem.stack_top_to_reg(*idx);
+    ok_pc!(pc.offset(isize_of!(STACKTOPTOREG)))
+}
+
+pub unsafe fn exec_readreg(pc: *const u8, mem: &mut Memory) -> ExecResult {
+    let idx = get_body!(ReadReg, pc.offset(2));
+    mem.read_reg(*idx);
+    ok_pc!(pc.offset(isize_of!(READREG)))
+}
+
+pub unsafe fn exec_pop(pc: *const u8, mem: &mut Memory) -> ExecResult {
+    mem.stack.pop().unwrap();
+    ok_pc!(pc.offset(isize_of!(POP)))
+}
+
+pub unsafe fn exec_popfree(pc: *const u8, mem: &mut Memory) -> ExecResult {
+    mem.pop_free();
+    ok_pc!(pc.offset(isize_of!(POPFREE)))
 }

@@ -71,16 +71,16 @@ where
     T1: TryFromRef<RuntimeData> + Debug,
     R: Into<Storable> + Debug,
 {
-    let n = pop_stack(mem, f_name)?;
-    let n = get_data_as::<i64>(&n)? as usize;
+    let n = mem.stack_back(0);
+    let n = get_data_as::<i64>(n)? as usize;
     let mut args: Vec<T1> = Vec::with_capacity(n);
     args.set_len(n);
     for i in 0..n {
         // you might think this doesn't work because we kill the object we get a ref from
         // but it's either a ref, in which case the actual value lives somewhere else, and the
         // ref is copy. Or it's a primitive value, which is copy anyway
-        let arg = pop_stack(mem, f_name)?;
-        let val = get_data_as::<T1>(&arg)?;
+        let arg = mem.stack_back(i + 1);
+        let val = get_data_as::<T1>(arg)?;
         *args.get_unchecked_mut(n - 1 - i) = val;
     }
     let s_entry = f(args)?.into();
@@ -97,31 +97,23 @@ where
     T1: TryFromRef<RuntimeData>,
     T2: TryFromRef<RuntimeData>,
 {
-    let n = pop_stack(mem, f_name)?;
-    let n = get_data_as::<i64>(&n)? as usize;
+    let n = mem.stack_back(0);
+    let n = get_data_as::<i64>(n)? as usize;
     let mut args: Vec<T2> = Vec::with_capacity(n);
     args.set_len(n);
     for i in 0..n {
         // you might think this doesn't work because we kill the object we get a ref from
         // but it's either a ref, in which case the actual value lives somewhere else, and the
         // ref is copy. Or it's a primitive value, which is copy anyway
-        let arg = pop_stack(mem, f_name)?;
-        let val = get_data_as::<T2>(&arg)?;
+        let arg = mem.stack_back(i + 1);
+        let val = get_data_as::<T2>(arg)?;
         *args.get_unchecked_mut(n - 1 - i) = val;
     }
-    let d1 = pop_stack(mem, f_name)?;
-    let a1 = get_data_as(&d1)?;
+    let d1 = mem.stack_back(n + 1);
+    let a1 = get_data_as(d1)?;
     f(a1, args)?;
     mem.store(CopyValue::Unit.into());
     Ok(())
-}
-
-/// pops data from the stack, and casts the StackEntry to RuntimeData.
-/// Also does error handling
-fn pop_stack(mem: &mut Memory, f_name: &str) -> Result<RuntimeData> {
-    mem.stack
-        .pop()
-        .ok_or_else(|| Error::StackEmpty(format!("During call to built in: {}", f_name)))
 }
 
 unsafe fn get_data_as<T>(d: &RuntimeData) -> Result<T>

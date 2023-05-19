@@ -25,7 +25,15 @@ pub enum OpCode {
     PushPrimitive(CopyValue),
     /// makes a copy of the entry at the given index and puts it on top of the stack
     RepushStackEntry(usize),
-    DeleteOnHeap(usize),
+    /// coppies the stack top to the register addressed by the u8
+    StackTopToReg(u8),
+    /// coppies the value from the register to the top of the stack
+    ReadReg(u8),
+    /// Pops a value from the stack
+    Pop,
+    /// Pops a value from the stack. Must be a reference. Frees the value behind
+    /// the ref
+    PopFree,
     ToStr,
     ToBool,
     Exec,

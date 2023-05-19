@@ -13,18 +13,23 @@ fn main() -> Result<()> {
         .iter()
         .map(|p| format!("tests/{}.out", p.file_stem().unwrap().to_str().unwrap()));
     for (script, expected_output) in scripts.iter().zip(outputs) {
-        let expected_output = fs::read_to_string(&expected_output)
-            .context(format!("loading expected output: {}", &expected_output))?;
-        let output_bytes = Command::new("../interpreter/target/release/levis")
-            .arg(script)
-            .output()
-            .context(format!("running script {}", script.display()))?
-            .stdout;
-        let output = String::from_utf8(output_bytes)?;
-        if output == expected_output {
-            println!("{}: passed", script.display());
-        } else {
-            println!("{}: failed\nactual output:\n{}", script.display(), output);
+        match fs::read_to_string(&expected_output) {
+            Ok(expected_output) => {
+                let output_bytes = Command::new("../interpreter/target/release/levis")
+                    .arg(script)
+                    .output()
+                    .context(format!("running script {}", script.display()))?
+                    .stdout;
+                let output = String::from_utf8(output_bytes)?;
+                if output == expected_output {
+                    println!("{}: passed", script.display());
+                } else {
+                    println!("{}: failed\nactual output:\n{}", script.display(), output);
+                }
+            }
+            Err(_) => {
+                println!("{}: skipped (no output file)", script.display());
+            }
         }
     }
     Ok(())

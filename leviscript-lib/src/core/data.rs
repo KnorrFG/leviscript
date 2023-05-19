@@ -83,6 +83,11 @@ pub trait TryIntoRef<T> {
 // ==============================================================================
 // Impls
 // ==============================================================================
+impl<T> Default for Data<T> {
+    fn default() -> Self {
+        Data::CopyVal(CopyValue::Unit)
+    }
+}
 impl<Implementor, T: TryFromRef<Implementor>> TryIntoRef<T> for Implementor {
     unsafe fn rtry_into(&self) -> Option<T> {
         T::try_from_ref(self)
