@@ -138,21 +138,10 @@ impl Compilable for Expr {
                 symbol_name,
                 value_expr,
             } => {
-                // if the child expression is a symbol, the scopes are updated.
-                // the code in the else block would work, but creates unnessessary
-                // indirection
-                if let Expr::Symbol(id, name) = value_expr.as_ref() {
-                    map_to_symbol_not_found(
-                        builder.add_symbol_alias(name, symbol_name),
-                        *id,
-                        name,
-                    )?;
-                } else {
-                    let old_builder = builder.clone();
-                    builder = value_expr.compile(builder, expr_types)?;
-                    assert_stack_grew_by_one(*id, &old_builder, &builder);
-                    builder.add_symbol_for_stack_top(symbol_name);
-                }
+                let old_builder = builder.clone();
+                builder = value_expr.compile(builder, expr_types)?;
+                assert_stack_grew_by_one(*id, &old_builder, &builder);
+                builder.add_symbol_for_stack_top(symbol_name);
                 builder
             }
             StrLit(id, elems) => {
@@ -181,7 +170,6 @@ impl Compilable for Expr {
                 }
                 builder.push_primitive_to_stack(n.into(), *id);
                 builder.text.push_back(OpCode::StrCat);
-                // there will the str on the heap and the ref to that str on the Stack
                 builder.create_value_in_memory(&DataType::str(), *id);
                 builder.collapse_scope();
                 builder
