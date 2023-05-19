@@ -170,15 +170,14 @@ impl Compilable for Expr {
                                 *symbol_ast_id,
                                 name,
                             )?;
-                            // TODO: typecheck and optional casting
                         }
                         Expr(id, sub_expr) => {
                             let old_builder = builder.clone();
                             builder = sub_expr.compile(builder, expr_types)?;
                             assert_stack_grew_by_one(*id, &old_builder, &builder);
-                            // TODO: typecheck and optional casting
                         }
                     }
+                    builder.check_and_fix_type_of_stack_top(&DataType::str());
                 }
                 builder.push_primitive_to_stack(n.into(), *id);
                 builder.text.push_back(OpCode::StrCat);
