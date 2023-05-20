@@ -5,3 +5,8 @@ let b = {
 }
 x{echo $b}
 
+let b = {}
+x{echo $b}
+
+let a = "1"
+x{echo $a}

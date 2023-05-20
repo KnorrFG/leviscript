@@ -5,7 +5,7 @@ file = _{ SOI ~ NEWLINE* ~ block ~ NEWLINE* ~ EOI }
 // ===============================================================================
 
 // add statements later
-block = { phrase ~ (NEWLINE* ~ phrase)* }
+block = { phrase? ~ (NEWLINE* ~ phrase)* }
 
 // add statement later
 phrase = {expression}

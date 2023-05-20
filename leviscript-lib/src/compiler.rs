@@ -91,7 +91,7 @@ impl Compilable for Expr {
                 let opcode = vm::built_ins::opcode(callee_name)
                     .expect(&format!("invalid builtin: {}", callee_name));
                 let old_builder = builder.clone();
-                builder.open_scope();
+                builder.open_scope(*id);
                 for (a, t) in args.iter().zip(&callee_sign.args) {
                     builder = a.compile(builder, expr_types)?;
                     if !builder.check_and_fix_type_of_stack_top(&t) {
@@ -148,7 +148,7 @@ impl Compilable for Expr {
             StrLit(id, elems) => {
                 use StrLitElem::*;
                 let n = elems.len();
-                builder.open_scope();
+                builder.open_scope(*id);
                 for e in elems {
                     match &e {
                         PureStrLit(id, val) => {
@@ -206,9 +206,9 @@ impl Compilable for Block {
         mut builder: ByteCodeBuilder,
         expr_types: &TypeIndex,
     ) -> Result<ByteCodeBuilder> {
-        let Block(_, phrases) = self;
+        let Block(id, phrases) = self;
 
-        builder.open_scope();
+        builder.open_scope(*id);
         for term in phrases {
             builder = term.compile(builder, expr_types)?;
         }

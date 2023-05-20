@@ -20,8 +20,9 @@ pub struct ByteCodeBuilder {
     pub symbol_table: Scopes<String, usize>,
     /// Represents the state that the stack will have when the contained code is run.
     pub stack_info: Vector<DataInfo>,
-    /// Represents the starting index on the stack for each scope
-    pub scope_starts: Vector<usize>,
+    /// Represents the starting index on the stack for each scope, as well as the AST-ID
+    /// of the node that created this scope
+    pub scope_starts: Vector<(usize, usize)>,
 }
 
 /// Util type for the Builder
@@ -223,48 +224,53 @@ impl ByteCodeBuilder {
         }
     }
 
-    pub fn open_scope(&mut self) {
+    pub fn open_scope(&mut self, ast_id: usize) {
         self.symbol_table.open_new();
-        self.scope_starts.push_back(self.stack_info.len());
+        self.scope_starts.push_back((self.stack_info.len(), ast_id));
     }
 
     pub fn collapse_scope(&mut self) {
-        let res_index = self.stack_info.len() - 1;
-        let scope_start_idx = self.scope_starts.back().unwrap();
-        let mut res_entry = self.stack_info[res_index].clone();
-        if let DataInfo {
-            ast_id: _,
-            type_info:
-                DataTypeInfo::HeapTypeInfo {
-                    dtype: _,
-                    owner_idx: new_owner,
-                },
-        } = &mut res_entry
-        {
-            // The result is a heap ref. We need to check owner ship
-            match new_owner {
-                Owner::Some(orig_owner_idx) => {
-                    if *orig_owner_idx >= *scope_start_idx {
-                        // the owner will die with this scope, and we want to return the value
-                        // so it can't be deleted. So we steal ownership from the owner
-                        self.stack_info[*orig_owner_idx].type_info.disown();
-                        *new_owner = Owner::None
+        let (scope_start_idx, ast_id) = self.scope_starts.back().unwrap();
+        if *scope_start_idx == self.stack_info.len() {
+            // the scope was empty, we simply return a unit
+            self.push_primitive_to_stack(CopyValue::Unit, *ast_id);
+        } else {
+            let res_index = self.stack_info.len() - 1;
+            let mut res_entry = self.stack_info[res_index].clone();
+            if let DataInfo {
+                ast_id: _,
+                type_info:
+                    DataTypeInfo::HeapTypeInfo {
+                        dtype: _,
+                        owner_idx: new_owner,
+                    },
+            } = &mut res_entry
+            {
+                // The result is a heap ref. We need to check owner ship
+                match new_owner {
+                    Owner::Some(orig_owner_idx) => {
+                        if *orig_owner_idx >= *scope_start_idx {
+                            // the owner will die with this scope, and we want to return the value
+                            // so it can't be deleted. So we steal ownership from the owner
+                            self.stack_info[*orig_owner_idx].type_info.disown();
+                            *new_owner = Owner::None
+                        }
+                    }
+                    Owner::None => {
+                        // the ref is the owner, but it's a clone, so the original must be
+                        // disowned
+                        self.stack_info[res_index].type_info.disown();
+                    }
+                    Owner::Disowned => {
+                        panic!("found disowned ref in stack_info");
                     }
                 }
-                Owner::None => {
-                    // the ref is the owner, but it's a clone, so the original must be
-                    // disowned
-                    self.stack_info[res_index].type_info.disown();
-                }
-                Owner::Disowned => {
-                    panic!("found disowned ref in stack_info");
-                }
             }
+            self.text.push_back(OpCode::StackTopToReg(0));
+            self.pop_stack_entries(self.stack_info.len() - scope_start_idx);
+            self.text.push_back(OpCode::ReadReg(0));
+            self.stack_info.push_back(res_entry);
         }
-        self.text.push_back(OpCode::StackTopToReg(0));
-        self.pop_stack_entries(self.stack_info.len() - scope_start_idx);
-        self.text.push_back(OpCode::ReadReg(0));
-        self.stack_info.push_back(res_entry);
         self.scope_starts.pop_back().unwrap();
         self.symbol_table.collapse_innermost();
     }
