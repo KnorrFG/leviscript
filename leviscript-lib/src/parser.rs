@@ -70,6 +70,7 @@ fn parse_expression<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResu
 
     let child = get_single_child(pair.into_inner());
     match child.as_rule() {
+        Rule::block_expression => parse_block_expr(child, span_vec),
         Rule::x_expression => parse_x_expression(child, span_vec),
         Rule::str_lit => parse_str_lit(child, span_vec),
         Rule::let_expr => parse_let_expr(child, span_vec),
@@ -93,6 +94,14 @@ fn parse_call_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResul
         callee: Box::new(callee),
         args,
     })
+}
+
+fn parse_block_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
+    let id = span_vec.len();
+    span_vec.push(pair.as_span());
+    assert!(matches!(pair.as_rule(), Rule::block_expression));
+    let child = get_single_child(pair.into_inner());
+    Ok(Expr::Block(id, Box::new(parse_block(child, span_vec)?)))
 }
 
 fn parse_symbol_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {

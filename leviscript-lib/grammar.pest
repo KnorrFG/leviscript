@@ -11,12 +11,13 @@ block = { phrase ~ (NEWLINE* ~ phrase)* }
 phrase = {expression}
 
 // call must come before symbol, because most calls begin with a symbol
-expression = { x_expression | let_expr | str_lit | call | symbol | int_lit }
+expression = { block_expression | x_expression | let_expr | str_lit | call | symbol | int_lit }
 
 WHITESPACE = _{ " " | "\t" | "\\\n" }
 COMMENT = _{ "#" ~ (!NEWLINE ~ ANY)* }
 
 r_brace = _{ "}" }
+l_brace = _{ "{" }
 
 dollar = _{ "$" }
 equal_sign = _{ "=" }
@@ -24,8 +25,15 @@ quote = _{ "\"" }
 symbol = @{ symbol_chars ~ (symbol_chars | ASCII_DIGIT)*}
 symbol_chars = { ASCII_ALPHA | "_" }
 
+
 // ===============================================================================
-// Let Expressions
+// Block expression
+// ===============================================================================
+
+block_expression = { l_brace ~ NEWLINE* ~ block ~ NEWLINE* ~ r_brace}
+
+// ===============================================================================
+// calls
 // ===============================================================================
 // a fn without args is called like this: foo(), a function with args is called
 // like this: foo bar bz

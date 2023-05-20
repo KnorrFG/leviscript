@@ -1,0 +1,7 @@
+let b = {
+  let c = "hi"
+  let d = c
+  d
+}
+x{echo $b}
+

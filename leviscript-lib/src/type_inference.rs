@@ -51,9 +51,15 @@ pub fn infer_ast_types(
     mut type_idx: TypeIndex,
 ) -> Result<(Environment, TypeIndex)> {
     match ast {
-        Block(_, phrases) => {
+        Block(id, phrases) => {
             for phrase in phrases {
                 (env, type_idx) = infer_phrase_type(phrase, env, type_idx)?;
+            }
+            let id = EnvironmentIdentifier::AstId(*id);
+            if let Some(last_phrase) = phrases.last() {
+                type_idx.insert(id, type_idx.get(&last_phrase.get_id()).unwrap().clone());
+            } else {
+                type_idx.insert(id, DataType::unit());
             }
             Ok((env, type_idx))
         }
@@ -62,11 +68,16 @@ pub fn infer_ast_types(
 
 pub fn infer_phrase_type(
     phrase: &Phrase,
-    env: Environment,
-    type_idx: TypeIndex,
+    mut env: Environment,
+    mut type_idx: TypeIndex,
 ) -> Result<(Environment, TypeIndex)> {
-    let Phrase::Expr(_, expr) = phrase;
-    infer_expr_type(expr, env, type_idx)
+    let Phrase::Expr(id, expr) = phrase;
+    (env, type_idx) = infer_expr_type(expr, env, type_idx)?;
+    type_idx.insert(
+        EnvironmentIdentifier::AstId(*id),
+        type_idx.get(&expr.get_id()).unwrap().clone(),
+    );
+    Ok((env, type_idx))
 }
 
 pub fn infer_expr_type(
@@ -76,6 +87,15 @@ pub fn infer_expr_type(
 ) -> Result<(Environment, TypeIndex)> {
     use Expr::*;
     match expr {
+        Block(id, block) => {
+            (_, type_idx) = infer_ast_types(block, env.clone(), type_idx)?;
+            copy_type_info(
+                &mut type_idx,
+                &block.get_id(),
+                EnvironmentIdentifier::AstId(*id),
+            );
+            Ok((env, type_idx))
+        }
         Call { id, callee, args } => {
             (_, type_idx) = infer_expr_type(callee, env.clone(), type_idx)?;
             for arg in args {
@@ -138,4 +158,12 @@ pub fn inference_start() -> (Environment, TypeIndex) {
         );
     }
     (env, type_idx)
+}
+
+fn copy_type_info(
+    type_idx: &mut TypeIndex,
+    from: &EnvironmentIdentifier,
+    to: EnvironmentIdentifier,
+) {
+    type_idx.insert(to, type_idx.get(from).unwrap().clone());
 }

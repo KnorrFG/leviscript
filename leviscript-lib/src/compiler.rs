@@ -77,6 +77,7 @@ impl Compilable for Expr {
     ) -> Result<ByteCodeBuilder> {
         use Expr::*;
         Ok(match self {
+            Block(_, block) => block.compile(builder, expr_types)?,
             Call { id, callee, args } => {
                 let Expr::Symbol(callee_id, callee_name) = callee.as_ref() else {
                     compiler_bug!(callee.get_id().into(),"Calling something that is not a symbol is not supported yet" );
@@ -198,17 +199,20 @@ impl Compilable for Phrase {
         }
     }
 }
+
 impl Compilable for Block {
     fn compile(
         &self,
         mut builder: ByteCodeBuilder,
         expr_types: &TypeIndex,
     ) -> Result<ByteCodeBuilder> {
-        let Block(_, terms) = self;
+        let Block(_, phrases) = self;
 
-        for term in terms {
+        builder.open_scope();
+        for term in phrases {
             builder = term.compile(builder, expr_types)?;
         }
+        builder.collapse_scope();
         Ok(builder)
     }
 }

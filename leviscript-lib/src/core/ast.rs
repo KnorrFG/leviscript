@@ -47,6 +47,7 @@ pub enum Expr {
         callee: Box<Expr>,
         args: Vec<Expr>,
     },
+    Block(usize, Box<Block>),
 }
 
 /// represents part of a string literal
@@ -83,6 +84,7 @@ impl AstNode for Expr {
         use Expr::*;
         EnvironmentIdentifier::AstId(match self {
             // XExpr { id, .. } => id,
+            Block(id, _) => *id,
             StrLit(id, ..) => *id,
             Let { id, .. } => *id,
             Symbol(id, ..) => *id,
