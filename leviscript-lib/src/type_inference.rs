@@ -22,6 +22,14 @@ impl From<EnvironmentIdentifier> for usize {
     }
 }
 
+pub trait TypeInferable {
+    fn infer_types(
+        &self,
+        env: Environment,
+        type_idx: TypeIndex,
+    ) -> Result<(Environment, TypeIndex)>;
+}
+
 /// The type information for each expr will be associated via it's id
 pub type TypeIndex = HashMap<EnvironmentIdentifier, DataType>;
 
@@ -45,98 +53,115 @@ impl Error {
 
 pub type Result<T> = StdResult<T, Error>;
 
-pub fn infer_ast_types(
-    ast: &Block,
-    mut env: Environment,
-    mut type_idx: TypeIndex,
-) -> Result<(Environment, TypeIndex)> {
-    match ast {
-        Block(id, phrases) => {
-            for phrase in phrases {
-                (env, type_idx) = infer_phrase_type(phrase, env, type_idx)?;
-            }
-            let id = EnvironmentIdentifier::AstId(*id);
-            if let Some(last_phrase) = phrases.last() {
-                type_idx.insert(id, type_idx.get(&last_phrase.get_id()).unwrap().clone());
-            } else {
-                type_idx.insert(id, DataType::unit());
-            }
-            Ok((env, type_idx))
+impl TypeInferable for Block {
+    fn infer_types(
+        &self,
+        mut env: Environment,
+        mut type_idx: TypeIndex,
+    ) -> Result<(Environment, TypeIndex)> {
+        let Block(id, phrases) = self;
+        for phrase in phrases {
+            (env, type_idx) = phrase.infer_types(env, type_idx)?;
         }
+        let id = EnvironmentIdentifier::AstId(*id);
+        if let Some(last_phrase) = phrases.last() {
+            copy_type_info(&mut type_idx, &last_phrase.get_id(), id);
+        } else {
+            type_idx.insert(id, DataType::unit());
+        }
+        Ok((env, type_idx))
     }
 }
 
-pub fn infer_phrase_type(
-    phrase: &Phrase,
-    mut env: Environment,
-    mut type_idx: TypeIndex,
-) -> Result<(Environment, TypeIndex)> {
-    let Phrase::Expr(id, expr) = phrase;
-    (env, type_idx) = infer_expr_type(expr, env, type_idx)?;
-    type_idx.insert(
-        EnvironmentIdentifier::AstId(*id),
-        type_idx.get(&expr.get_id()).unwrap().clone(),
-    );
-    Ok((env, type_idx))
+impl TypeInferable for FnFragment {
+    fn infer_types(
+        &self,
+        _env: Environment,
+        _type_idx: TypeIndex,
+    ) -> Result<(Environment, TypeIndex)> {
+        todo!();
+    }
 }
 
-pub fn infer_expr_type(
-    expr: &Expr,
-    mut env: Environment,
-    mut type_idx: TypeIndex,
-) -> Result<(Environment, TypeIndex)> {
-    use Expr::*;
-    match expr {
-        Block(id, block) => {
-            (_, type_idx) = infer_ast_types(block, env.clone(), type_idx)?;
-            copy_type_info(
-                &mut type_idx,
-                &block.get_id(),
-                EnvironmentIdentifier::AstId(*id),
-            );
-            Ok((env, type_idx))
+impl TypeInferable for Call {
+    fn infer_types(
+        &self,
+        env: Environment,
+        mut type_idx: TypeIndex,
+    ) -> Result<(Environment, TypeIndex)> {
+        let Call { id, callee, args } = self;
+        (_, type_idx) = callee.infer_types(env.clone(), type_idx)?;
+        for arg in args {
+            (_, type_idx) = arg.infer_types(env.clone(), type_idx)?;
         }
-        Call { id, callee, args } => {
-            (_, type_idx) = infer_expr_type(callee, env.clone(), type_idx)?;
-            for arg in args {
-                (_, type_idx) = infer_expr_type(arg, env.clone(), type_idx)?;
-            }
-            let callee_id = callee.get_id();
-            let callee_type = type_idx.get(&callee_id).unwrap();
-            let expr_type = callee_type
-                .try_get_return_type()
-                .ok_or_else(|| Error::NotCallable(*id))?;
-            type_idx.insert(EnvironmentIdentifier::AstId(*id), expr_type);
-            Ok((env, type_idx))
-        }
-        IntLit(id, _) => {
-            type_idx.insert(EnvironmentIdentifier::AstId(*id), DataType::int());
-            Ok((env, type_idx))
-        }
-        StrLit(id, _) => {
-            type_idx.insert(EnvironmentIdentifier::AstId(*id), DataType::int());
-            Ok((env, type_idx))
-        }
-        Let {
+        let callee_id = callee.get_id();
+        let callee_type = type_idx.get(&callee_id).unwrap();
+        let fn_result = callee_type
+            .try_get_return_type()
+            .ok_or_else(|| Error::NotCallable(*id))?;
+        let Some(expr_type) = fn_result .concrete_type() else {
+            panic!("Currently not supported");
+        };
+        type_idx.insert(EnvironmentIdentifier::AstId(*id), expr_type.clone());
+        Ok((env, type_idx))
+    }
+}
+
+impl TypeInferable for IntLit {
+    fn infer_types(
+        &self,
+        env: Environment,
+        mut type_idx: TypeIndex,
+    ) -> Result<(Environment, TypeIndex)> {
+        type_idx.insert(EnvironmentIdentifier::AstId(self.0), DataType::int());
+        Ok((env, type_idx))
+    }
+}
+
+impl TypeInferable for StrLit {
+    fn infer_types(
+        &self,
+        env: Environment,
+        mut type_idx: TypeIndex,
+    ) -> Result<(Environment, TypeIndex)> {
+        type_idx.insert(EnvironmentIdentifier::AstId(self.0), DataType::str());
+        Ok((env, type_idx))
+    }
+}
+
+impl TypeInferable for Let {
+    fn infer_types(
+        &self,
+        mut env: Environment,
+        mut type_idx: TypeIndex,
+    ) -> Result<(Environment, TypeIndex)> {
+        let Let {
             id,
             symbol_name,
             value_expr,
-        } => {
-            (_, type_idx) = infer_expr_type(value_expr, env.clone(), type_idx)?;
-            let rhs_type = type_idx.get(&value_expr.get_id()).unwrap();
-            let id = EnvironmentIdentifier::AstId(*id);
-            type_idx.insert(id, rhs_type.clone());
-            env.add_entry(symbol_name.to_owned(), id);
-            Ok((env, type_idx))
-        }
-        Symbol(id, name) => {
-            let symbol_def_id = env
-                .find_entry(name)
-                .ok_or_else(|| Error::UndefinedSymbol(*id, name.to_owned()))?;
-            let t = type_idx.get(symbol_def_id).unwrap();
-            type_idx.insert(EnvironmentIdentifier::AstId(*id), t.clone());
-            Ok((env, type_idx))
-        }
+        } = self;
+        (_, type_idx) = value_expr.infer_types(env.clone(), type_idx)?;
+        let rhs_type = type_idx.get(&value_expr.get_id()).unwrap();
+        let id = EnvironmentIdentifier::AstId(*id);
+        type_idx.insert(id, rhs_type.clone());
+        env.add_entry(symbol_name.to_owned(), id);
+        Ok((env, type_idx))
+    }
+}
+
+impl TypeInferable for Symbol {
+    fn infer_types(
+        &self,
+        env: Environment,
+        mut type_idx: TypeIndex,
+    ) -> Result<(Environment, TypeIndex)> {
+        let Symbol(id, name) = self;
+        let symbol_def_id = env
+            .find_entry(name)
+            .ok_or_else(|| Error::UndefinedSymbol(*id, name.to_owned()))?;
+        let t = type_idx.get(symbol_def_id).unwrap();
+        type_idx.insert(EnvironmentIdentifier::AstId(*id), t.clone());
+        Ok((env, type_idx))
     }
 }
 

@@ -48,7 +48,7 @@ pub enum DataTypeInfo {
 #[derive(Debug, Clone)]
 pub enum Owner {
     Some(usize),
-    None,
+    Me,
     Disowned,
 }
 
@@ -56,7 +56,7 @@ impl DataTypeInfo {
     pub fn str() -> Self {
         Self::HeapTypeInfo {
             dtype: HeapType::Str,
-            owner_idx: Owner::None,
+            owner_idx: Owner::Me,
         }
     }
 
@@ -71,10 +71,6 @@ impl DataTypeInfo {
             DataTypeInfo::StackType(st) => DataType::StackType(st),
             DataTypeInfo::CallableType(ct, sign) => DataType::Callable(ct, sign),
         }
-    }
-
-    pub fn sattisfies(&self, dtype: &DataType) -> bool {
-        self.clone().into_datatype().sattisfies(dtype)
     }
 }
 
@@ -116,7 +112,7 @@ impl ByteCodeBuilder {
         let mut entry = self.stack_info[*entry_idx].clone();
         if let DataTypeInfo::HeapTypeInfo {
             dtype,
-            owner_idx: Owner::None,
+            owner_idx: Owner::Me,
         } = entry.type_info
         {
             entry.type_info = DataTypeInfo::HeapTypeInfo {
@@ -153,7 +149,7 @@ impl ByteCodeBuilder {
                 .pop_back()
                 .expect("stack was emtpy unexpectedly");
             let opcode = if let DataTypeInfo::HeapTypeInfo {
-                owner_idx: Owner::None,
+                owner_idx: Owner::Me,
                 ..
             } = entry.type_info
             {
@@ -169,17 +165,15 @@ impl ByteCodeBuilder {
     /// use the ast_id of the expression that created the value
     pub fn create_value_in_memory(&mut self, dtype: &DataType, ast_id: usize) {
         match dtype {
-            DataType::StackType(stack_type) => {
-                self.stack_info.push_back(DataInfo {
-                    ast_id,
-                    type_info: DataTypeInfo::StackType(stack_type.clone()),
-                });
-            }
+            DataType::StackType(stack_type) => self.stack_info.push_back(DataInfo {
+                ast_id,
+                type_info: DataTypeInfo::StackType(stack_type.clone()),
+            }),
             DataType::HeapType(heap_type) => self.stack_info.push_back(DataInfo {
                 ast_id,
                 type_info: DataTypeInfo::HeapTypeInfo {
                     dtype: heap_type.clone(),
-                    owner_idx: Owner::None,
+                    owner_idx: Owner::Me,
                 },
             }),
             DataType::Callable(_, _) => unimplemented!(),
@@ -193,7 +187,7 @@ impl ByteCodeBuilder {
     ///
     /// Returns whether everything is fine. A return value of false should produce
     /// a compiler error
-    pub fn check_and_fix_type_of_stack_top(&mut self, target_type: &DataType) -> bool {
+    pub fn check_and_fix_type_of_stack_top(&mut self, target_tmpl: &TypeSet) -> bool {
         let current_type = self
             .stack_info
             .last()
@@ -201,21 +195,27 @@ impl ByteCodeBuilder {
             .type_info
             .clone()
             .into_datatype();
-        if current_type.sattisfies(target_type) {
+        if target_tmpl.is_sattisfied_by(&current_type) {
             // types already match
             true
         } else {
             // types don't match, but maybe there's a cast
-            let maybe_opcode = match target_type {
-                DataType::HeapType(HeapType::Str) => Some(OpCode::ToStr),
-                DataType::StackType(StackType::Bool) => Some(OpCode::ToBool),
-                _ => OpCode::get_cast(&current_type, target_type),
+            let maybe_opcode = match target_tmpl.concrete_type() {
+                Some(DataType::HeapType(HeapType::Str)) => Some(OpCode::ToStr),
+                Some(DataType::StackType(StackType::Bool)) => Some(OpCode::ToBool),
+                Some(other) => OpCode::get_cast(&current_type, other),
+                None => None,
             };
             if let Some(code) = maybe_opcode {
                 // There is a cast. Apply and return true.
                 self.text.push_back(code);
                 let old_entry = self.stack_info.pop_back().unwrap();
-                self.create_value_in_memory(target_type, old_entry.ast_id);
+                self.create_value_in_memory(
+                    target_tmpl
+                        .concrete_type()
+                        .expect("this is a compiler bug - implicit cast"),
+                    old_entry.ast_id,
+                );
                 true
             } else {
                 // There is no cast. Type error
@@ -229,6 +229,13 @@ impl ByteCodeBuilder {
         self.scope_starts.push_back((self.stack_info.len(), ast_id));
     }
 
+    /// Collapses a scope
+    ///
+    /// That means generating code to drop all stack vars except the upmost one, which is
+    /// temporarily stored in a register, and adjusting the comp-time information about the stack.
+    /// If a stack var was an owning heap var, and it is dropped, the heap allocation is freed. If
+    /// a non owning ref is returned, and the owner is destroyed, ownership is stolen before the
+    /// destruction.
     pub fn collapse_scope(&mut self) {
         let (scope_start_idx, ast_id) = self.scope_starts.back().unwrap();
         if *scope_start_idx == self.stack_info.len() {
@@ -253,10 +260,10 @@ impl ByteCodeBuilder {
                             // the owner will die with this scope, and we want to return the value
                             // so it can't be deleted. So we steal ownership from the owner
                             self.stack_info[*orig_owner_idx].type_info.disown();
-                            *new_owner = Owner::None
+                            *new_owner = Owner::Me
                         }
                     }
-                    Owner::None => {
+                    Owner::Me => {
                         // the ref is the owner, but it's a clone, so the original must be
                         // disowned
                         self.stack_info[res_index].type_info.disown();
@@ -300,7 +307,7 @@ impl DataTypeInfo {
     pub fn disown(&mut self) {
         if let DataTypeInfo::HeapTypeInfo {
             dtype,
-            owner_idx: owner_idx @ Owner::None,
+            owner_idx: owner_idx @ Owner::Me,
         } = self
         {
             *owner_idx = Owner::Disowned;

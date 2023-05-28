@@ -1,114 +1,85 @@
 //! Contains the AST types. All anonymous structs and variants start with a usize, which is their
 //! ID. The Id refers to the index in the Span-vec that is returned together with the ast
 
+use std::ops::Deref;
+
 use serde::{Deserialize, Serialize};
 
+use crate::core::ast_macros::{define_ast_node_ref, mk_enum_node};
+// this is needed because the mk_enum_node macro generates an implementation for it
 use crate::type_inference::EnvironmentIdentifier;
+
+use proc_macros::AstNode;
 
 /// represents stuff that works with all AST-Nodes
 pub trait AstNode {
     fn get_id(&self) -> EnvironmentIdentifier;
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = AstNodeRef<'a>> + '_>;
+    fn get_node_ref(&self) -> AstNodeRef;
 }
 
 /// represents multiple phrases that are executed one after another
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Block(pub usize, pub Vec<Phrase>);
+#[derive(Debug, Serialize, Deserialize, Clone, AstNode)]
+pub struct Block(pub usize, #[children] pub Vec<Phrase>);
 
-/// either an expression or a statement
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum Phrase {
-    Expr(usize, Expr),
+mk_enum_node! { Phrase, Expr }
+
+#[derive(Debug, Serialize, Deserialize, Clone, AstNode)]
+pub struct StrLit(pub usize, pub String);
+
+#[derive(Debug, Serialize, Deserialize, Clone, AstNode)]
+pub struct Symbol(pub usize, pub String);
+
+//#[derive(Debug, Serialize, Deserialize, Clone, AstNode)]
+//pub struct Keyword(pub usize, pub String);
+
+#[derive(Debug, Serialize, Deserialize, Clone, AstNode)]
+pub struct IntLit(pub usize, pub i64);
+
+#[derive(Debug, Serialize, Deserialize, Clone, AstNode)]
+pub struct Let {
+    pub id: usize,
+    pub symbol_name: String,
+
+    #[child]
+    pub value_expr: Box<Expr>,
 }
 
-/// represents an expression
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum Expr {
-    /// represents an X-Expression
-    // XExpr {
-    //     exe: XExprAtom,
-    //     args: Vec<XExprAtom>,
-    //     id: usize,
-    // },
-    /// represents a string literal
-    StrLit(usize, Vec<StrLitElem>),
-    /// represents variable defintion
-    Let {
-        id: usize,
-        symbol_name: String,
-        value_expr: Box<Expr>,
-    },
-    /// represents a symbol, respectivly it's value
-    Symbol(usize, String),
-    /// represents an integer literal
-    IntLit(usize, i64),
-    /// represents a call to a (builtin) function
-    Call {
-        id: usize,
-        callee: Box<Expr>,
-        args: Vec<Expr>,
-    },
-    Block(usize, Box<Block>),
+#[derive(Debug, Serialize, Deserialize, Clone, AstNode)]
+pub struct Call {
+    pub id: usize,
+
+    #[child]
+    pub callee: Box<Expr>,
+
+    #[children]
+    pub args: Vec<Expr>,
 }
 
-/// represents part of a string literal
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum StrLitElem {
-    PureStrLit(usize, String),
-    Symbol(usize, String),
-    Expr(usize, Expr),
+#[derive(Debug, Serialize, Deserialize, Clone, AstNode)]
+pub struct FnFragment {
+    pub id: usize,
+    pub arg_names: Vec<String>,
+
+    #[child]
+    pub body: Box<Expr>,
 }
 
-/// represents an argment to an X-Expression
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum XExprAtom {
-    Ref(usize, String),
-    Str(usize, String),
+mk_enum_node! { Expr, StrLit, Symbol, IntLit, Let, Call, FnFragment, Block}
+
+define_ast_node_ref! {
+    Block, Phrase, StrLit, Symbol, IntLit, Let, Call, FnFragment, Expr,
 }
 
-impl AstNode for Block {
-    fn get_id(&self) -> EnvironmentIdentifier {
-        EnvironmentIdentifier::AstId(self.0)
-    }
-}
-
-impl AstNode for Phrase {
-    fn get_id(&self) -> EnvironmentIdentifier {
-        EnvironmentIdentifier::AstId(match self {
-            Self::Expr(id, _) => *id,
-        })
-    }
-}
-
-impl AstNode for Expr {
-    fn get_id(&self) -> EnvironmentIdentifier {
-        use Expr::*;
-        EnvironmentIdentifier::AstId(match self {
-            // XExpr { id, .. } => id,
-            Block(id, _) => *id,
-            StrLit(id, ..) => *id,
-            Let { id, .. } => *id,
-            Symbol(id, ..) => *id,
-            IntLit(id, ..) => *id,
-            Call { id, .. } => *id,
-        })
-    }
-}
-
-impl AstNode for StrLitElem {
-    fn get_id(&self) -> EnvironmentIdentifier {
-        EnvironmentIdentifier::AstId(match self {
-            Self::PureStrLit(id, ..) => *id,
-            Self::Symbol(id, ..) => *id,
-            Self::Expr(id, ..) => *id,
-        })
-    }
-}
-
-impl AstNode for XExprAtom {
-    fn get_id(&self) -> EnvironmentIdentifier {
-        EnvironmentIdentifier::AstId(match self {
-            Self::Ref(id, ..) => *id,
-            Self::Str(id, ..) => *id,
-        })
+impl<'a> AstNodeRef<'a> {
+    pub fn walk<F, E>(self, f: F) -> Result<(), E>
+    where
+        F: Fn(AstNodeRef) -> Result<(), E>,
+    {
+        f(self)?;
+        for child in self.children() {
+            child.walk(&f)?;
+        }
+        Ok(())
     }
 }

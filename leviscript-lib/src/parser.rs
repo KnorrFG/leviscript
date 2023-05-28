@@ -8,7 +8,7 @@
 use pest::error::Error;
 use pest_derive::Parser;
 
-use crate::core::*;
+use crate::{core::*, utils::to_str_vec};
 
 use std::matches;
 
@@ -53,35 +53,47 @@ fn parse_block<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Bl
 }
 
 fn parse_phrase<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Phrase> {
-    let id = span_vec.len();
-    span_vec.push(pair.as_span());
     assert!(matches!(pair.as_rule(), Rule::phrase));
 
     let child = get_single_child(pair.into_inner());
     match child.as_rule() {
-        Rule::expression => Ok(Phrase::Expr(id, parse_expression(child, span_vec)?)),
+        Rule::expression => Ok(Phrase::Expr(parse_expression(child, span_vec)?)),
         _ => unreachable!(),
     }
 }
 
 fn parse_expression<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
-    span_vec.push(pair.as_span());
     assert!(matches!(pair.as_rule(), Rule::expression | Rule::callee));
 
     let child = get_single_child(pair.into_inner());
-    match child.as_rule() {
-        Rule::block_expression => parse_block_expr(child, span_vec),
-        Rule::x_expression => parse_x_expression(child, span_vec),
-        Rule::str_lit => parse_str_lit(child, span_vec),
-        Rule::let_expr => parse_let_expr(child, span_vec),
-        Rule::int_lit => parse_int_lit(child, span_vec),
-        Rule::symbol => parse_symbol_expr(child, span_vec),
-        Rule::call => parse_call_expr(child, span_vec),
+    Ok(match child.as_rule() {
+        Rule::block_expression => parse_block_expr(child, span_vec)?.into(),
+        Rule::x_expression => parse_x_expression(child, span_vec)?.into(),
+        Rule::str_lit => parse_str_lit(child, span_vec)?.into(),
+        Rule::let_expr => parse_let_expr(child, span_vec)?.into(),
+        Rule::int_lit => parse_int_lit(child, span_vec)?.into(),
+        Rule::symbol => parse_symbol_expr(child, span_vec)?.into(),
+        Rule::call => parse_call_expr(child, span_vec)?.into(),
+        Rule::fragment_def => parse_fragment_def(child, span_vec)?.into(),
         _ => unreachable!(),
-    }
+    })
 }
 
-fn parse_call_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
+fn parse_fragment_def<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<FnFragment> {
+    let id = span_vec.len();
+    span_vec.push(pair.as_span());
+    assert!(matches!(pair.as_rule(), Rule::fragment_def));
+
+    let mut children: Vec<Pair> = pair.into_inner().collect();
+    let body = parse_expression(children.pop().unwrap(), span_vec)?;
+    Ok(FnFragment {
+        id,
+        arg_names: to_str_vec(children),
+        body: Box::new(body),
+    })
+}
+
+fn parse_call_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Call> {
     let id = span_vec.len();
     span_vec.push(pair.as_span());
     assert!(matches!(pair.as_rule(), Rule::call));
@@ -89,29 +101,27 @@ fn parse_call_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResul
     let mut children = pair.into_inner().map(|p| parse_expression(p, span_vec));
     let callee = children.next().unwrap()?;
     let args = children.collect::<Result<_, _>>()?;
-    Ok(Expr::Call {
+    Ok(Call {
         id,
         callee: Box::new(callee),
         args,
     })
 }
 
-fn parse_block_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
-    let id = span_vec.len();
-    span_vec.push(pair.as_span());
+fn parse_block_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Block> {
     assert!(matches!(pair.as_rule(), Rule::block_expression));
     let child = get_single_child(pair.into_inner());
-    Ok(Expr::Block(id, Box::new(parse_block(child, span_vec)?)))
+    parse_block(child, span_vec)
 }
 
-fn parse_symbol_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
+fn parse_symbol_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Symbol> {
     let id = span_vec.len();
     span_vec.push(pair.as_span());
     assert!(matches!(pair.as_rule(), Rule::symbol));
-    Ok(Expr::Symbol(id, pair.as_str().into()))
+    Ok(Symbol(id, pair.as_str().into()))
 }
 
-fn parse_int_lit<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
+fn parse_int_lit<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<IntLit> {
     let id = span_vec.len();
     span_vec.push(pair.as_span());
     assert!(matches!(pair.as_rule(), Rule::int_lit));
@@ -125,16 +135,16 @@ fn parse_int_lit<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<
             .parse::<i64>()
             .expect(&format!("cant parse {} as i64", val_str))
     };
-    Ok(Expr::IntLit(id, val))
+    Ok(IntLit(id, val))
 }
 
-fn parse_let_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
+fn parse_let_expr<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Let> {
     let id = span_vec.len();
     span_vec.push(pair.as_span());
     assert!(matches!(pair.as_rule(), Rule::let_expr));
 
     let mut children = pair.into_inner();
-    Ok(Expr::Let {
+    Ok(Let {
         id,
         symbol_name: children.next().unwrap().as_str().into(),
         value_expr: Box::new(parse_expression(children.next().unwrap(), span_vec)?),
@@ -149,29 +159,39 @@ fn parse_str_lit<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<
     // A strlit is either quoted or single_quoted, that makes a different in the grammar,
     // but the structure is the same, so we just go one lvl deeper
     let pair = get_single_child(pair.into_inner());
-    let children = pair
+    let children: Vec<_> = pair
+        .clone()
         .into_inner()
         .map(|p| parse_str_lit_elem(p, span_vec))
         .collect::<Result<_, _>>()?;
-    Ok(Expr::StrLit(id, children))
+    Ok(if children.len() == 1 {
+        children[0].clone()
+    } else {
+        span_vec.push(pair.as_span());
+        Call {
+            callee: Box::new(Symbol(id + 1, "strcat".into()).into()),
+            args: children,
+            id,
+        }
+        .into()
+    })
 }
 
-fn parse_str_lit_elem<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<StrLitElem> {
+fn parse_str_lit_elem<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
     let id = span_vec.len();
     span_vec.push(pair.as_span());
     assert!(matches!(pair.as_rule(), Rule::quoted_str_lit_elem));
 
     let child = get_single_child(pair.into_inner());
-    use StrLitElem::*;
     Ok(match child.as_rule() {
-        Rule::pure_quoted_str_lit => PureStrLit(id, child.as_str().into()),
-        Rule::symbol => Symbol(id, child.as_str().into()),
-        Rule::expression => Expr(id, parse_expression(child, span_vec)?),
+        Rule::pure_quoted_str_lit => StrLit(id, child.as_str().into()).into(),
+        Rule::symbol => Symbol(id, child.as_str().into()).into(),
+        Rule::expression => parse_expression(child, span_vec)?,
         _ => unreachable!(),
     })
 }
 
-fn parse_x_expression<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Expr> {
+fn parse_x_expression<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResult<Call> {
     let id = span_vec.len();
     span_vec.push(pair.as_span());
     // this is pushed twice because we will insert an Expr node for the built in call, which does not
@@ -185,8 +205,8 @@ fn parse_x_expression<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseRe
         .map(|p| parse_xexpr_atom(p, span_vec))
         .collect::<Result<_, _>>()?;
 
-    Ok(Expr::Call {
-        callee: Box::new(Expr::Symbol(id + 1, "exec".into())),
+    Ok(Call {
+        callee: Box::new(Symbol(id + 1, "exec".into()).into()),
         args,
         id,
     })
@@ -199,10 +219,8 @@ fn parse_xexpr_atom<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseResu
 
     let child = get_single_child(pair.into_inner());
     Ok(match child.as_rule() {
-        Rule::symbol => Expr::Symbol(id, child.as_str().into()),
-        Rule::xexpr_str => {
-            Expr::StrLit(id, vec![StrLitElem::PureStrLit(id, child.as_str().into())])
-        }
+        Rule::symbol => Symbol(id, child.as_str().into()).into(),
+        Rule::xexpr_str => StrLit(id, child.as_str().into()).into(),
         _ => unreachable!(),
     })
 }

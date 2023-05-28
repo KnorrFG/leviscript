@@ -43,11 +43,11 @@ pub const BUILT_INS: [&'static str; 2] = ["exec", "strcat"];
 pub fn signatures(f_name: &str) -> Option<Signature> {
     Some(match f_name {
         "exec" => Signature::new()
-            .arg(DataType::str())
-            .variadic(DataType::str()),
+            .arg(DataType::str().into())
+            .variadic(DataType::str().into()),
         "strcat" => Signature::new()
-            .variadic(DataType::str())
-            .result(DataType::str()),
+            .variadic(DataType::str().into())
+            .result(DataType::str().into()),
         _ => {
             return None;
         }

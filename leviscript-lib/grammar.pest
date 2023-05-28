@@ -11,13 +11,18 @@ block = { phrase? ~ (NEWLINE* ~ phrase)* }
 phrase = {expression}
 
 // call must come before symbol, because most calls begin with a symbol
-expression = { block_expression | x_expression | let_expr | str_lit | call | symbol | int_lit }
+expression = { 
+  fragment_def | block_expression | x_expression | let_expr | str_lit | call 
+  | symbol | int_lit }
 
 WHITESPACE = _{ " " | "\t" | "\\\n" }
 COMMENT = _{ "#" ~ (!NEWLINE ~ ANY)* }
 
-r_brace = _{ "}" }
 l_brace = _{ "{" }
+r_brace = _{ "}" }
+l_paren = _{ "(" }
+r_paren = _{ ")" }
+
 
 dollar = _{ "$" }
 equal_sign = _{ "=" }
@@ -131,10 +136,22 @@ sub_expr_start = _{ "${" }
 
 
 // ===============================================================================
-// Sub expressions
+// Int lit
 // ===============================================================================
 
 int_lit = @{ "-"? ~ (
 	("0x" ~ ASCII_HEX_DIGIT ~ (ASCII_HEX_DIGIT | "_")*)
 	| (ASCII_DIGIT ~ (ASCII_DIGIT | "_")*)
 	)}
+
+
+// ===============================================================================
+// Functions
+// ===============================================================================
+
+// a single block of code with arguments (a.k.a) a lambda is a fragment
+
+fragment_def = { FN_KW ~ symbol+ ~ R_ARROW ~ expression }
+FN_KW = _{ "fn" }
+R_ARROW = _{ "->" }
+

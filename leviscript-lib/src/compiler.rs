@@ -33,7 +33,7 @@ pub enum CompilationError {
     TypeError {
         ast_id: usize,
         actual: DataType,
-        expected: DataType,
+        expected: TypeSet,
     },
 }
 
@@ -48,7 +48,7 @@ impl CompilationError {
     }
 }
 
-type Result<T> = StdResult<T, CompilationError>;
+pub type Result<T> = StdResult<T, CompilationError>;
 
 /// Handles first part of compilation
 pub trait Compilable {
@@ -69,134 +69,129 @@ macro_rules! compiler_bug {
     };
 }
 
-impl Compilable for Expr {
+impl Compilable for FnFragment {
     fn compile(
         &self,
         mut builder: ByteCodeBuilder,
         expr_types: &TypeIndex,
     ) -> Result<ByteCodeBuilder> {
-        use Expr::*;
-        Ok(match self {
-            Block(_, block) => block.compile(builder, expr_types)?,
-            Call { id, callee, args } => {
-                let Expr::Symbol(callee_id, callee_name) = callee.as_ref() else {
-                    compiler_bug!(callee.get_id().into(),"Calling something that is not a symbol is not supported yet" );
-                };
-                let callee_type = expr_types
-                    .get(&EnvironmentIdentifier::AstId(*callee_id))
-                    .expect("Missing Entry in type idx");
-                let DataType::Callable(CallableType::Builtin, callee_sign) = callee_type else {
-                    compiler_bug!(*callee_id, "Currently only calling built ins is supported");
-                };
-                let opcode = vm::built_ins::opcode(callee_name)
-                    .expect(&format!("invalid builtin: {}", callee_name));
-                let old_builder = builder.clone();
-                builder.open_scope(*id);
-                for (a, t) in args.iter().zip(&callee_sign.args) {
-                    builder = a.compile(builder, expr_types)?;
-                    if !builder.check_and_fix_type_of_stack_top(&t) {
-                        return Err(CompilationError::TypeError {
-                            ast_id: a.get_id().into(),
-                            actual: expr_types.get(&a.get_id()).unwrap().clone(),
-                            expected: t.clone(),
-                        });
-                    }
-                }
-
-                // The above loop will not compile the expressions for the variadic arguments.
-                // because zip stops at the shorter iter, so this needs to be done here
-                if let Some(t) = &callee_sign.var_arg {
-                    for arg in args.iter().skip(callee_sign.args.len()) {
-                        builder = arg.compile(builder, expr_types)?;
-                        if !builder.check_and_fix_type_of_stack_top(&t) {
-                            return Err(CompilationError::TypeError {
-                                ast_id: arg.get_id().into(),
-                                actual: expr_types.get(&arg.get_id()).unwrap().clone(),
-                                expected: t.clone(),
-                            });
-                        }
-                    }
-                }
-                assert!(
-                    builder.stack_info.len() == old_builder.stack_info.len() + args.len(),
-                    "Stack has the wrong amount of arguments"
-                );
-                let n_var_args = if callee_sign.var_arg.is_some() {
-                    Some(args.len() - callee_sign.args.len())
-                } else {
-                    None
-                };
-                if let Some(n) = n_var_args {
-                    builder.push_primitive_to_stack(n.into(), *id);
-                }
-                builder.text.push_back(opcode);
-                builder.create_value_in_memory(&callee_sign.result, *id);
-                builder.collapse_scope();
-                builder
-            }
-            Let {
-                id,
-                symbol_name,
-                value_expr,
-            } => {
-                let old_builder = builder.clone();
-                builder = value_expr.compile(builder, expr_types)?;
-                assert_stack_grew_by_one(*id, &old_builder, &builder);
-                builder.add_symbol_for_stack_top(symbol_name);
-                builder
-            }
-            StrLit(id, elems) => {
-                use StrLitElem::*;
-                let n = elems.len();
-                builder.open_scope(*id);
-                for e in elems {
-                    match &e {
-                        PureStrLit(id, val) => {
-                            builder.add_to_datasection_and_push_ref(Value::Str(val.clone()), *id);
-                        }
-                        Symbol(symbol_ast_id, name) => {
-                            map_to_symbol_not_found(
-                                builder.copy_symbol_target_to_stack_top(name),
-                                *symbol_ast_id,
-                                name,
-                            )?;
-                        }
-                        Expr(id, sub_expr) => {
-                            let old_builder = builder.clone();
-                            builder = sub_expr.compile(builder, expr_types)?;
-                            assert_stack_grew_by_one(*id, &old_builder, &builder);
-                        }
-                    }
-                    builder.check_and_fix_type_of_stack_top(&DataType::str());
-                }
-                builder.push_primitive_to_stack(n.into(), *id);
-                builder.text.push_back(OpCode::StrCat);
-                builder.create_value_in_memory(&DataType::str(), *id);
-                builder.collapse_scope();
-                builder
-            }
-            Symbol(ast_id, name) => {
-                map_to_symbol_not_found(
-                    builder.copy_symbol_target_to_stack_top(name),
-                    *ast_id,
-                    name,
-                )?;
-                builder
-            }
-            IntLit(id, val) => {
-                builder.push_primitive_to_stack(CopyValue::Int(*val), *id);
-                builder
-            }
-        })
+        todo!();
     }
 }
 
-impl Compilable for Phrase {
-    fn compile(&self, builder: ByteCodeBuilder, expr_types: &TypeIndex) -> Result<ByteCodeBuilder> {
-        use Phrase::*;
-        match self {
-            Expr(_, exp) => exp.compile(builder, expr_types),
+impl Compilable for Call {
+    fn compile(
+        &self,
+        mut builder: ByteCodeBuilder,
+        expr_types: &TypeIndex,
+    ) -> Result<ByteCodeBuilder> {
+        let Call { id, callee, args } = self;
+        let Expr::Symbol(Symbol(callee_id, callee_name)) = callee.as_ref() else {
+            compiler_bug!(callee.get_id().into(),"Calling something that is not a symbol is not supported yet" );
+        };
+        let callee_type = expr_types
+            .get(&EnvironmentIdentifier::AstId(*callee_id))
+            .expect("Missing Entry in type idx");
+        let DataType::Callable(CallableType::Builtin, callee_sign) = callee_type else {
+                    compiler_bug!(*callee_id, "Currently only calling built ins is supported");
+                };
+        let opcode =
+            vm::built_ins::opcode(callee_name).expect(&format!("invalid builtin: {}", callee_name));
+        let old_builder = builder.clone();
+        builder.open_scope(*id);
+        for (a, t) in args.iter().zip(&callee_sign.args) {
+            builder = a.compile(builder, expr_types)?;
+            if !builder.check_and_fix_type_of_stack_top(&t) {
+                return Err(CompilationError::TypeError {
+                    ast_id: a.get_id().into(),
+                    actual: expr_types.get(&a.get_id()).unwrap().clone(),
+                    expected: t.clone(),
+                });
+            }
         }
+
+        // The above loop will not compile the expressions for the variadic arguments.
+        // because zip stops at the shorter iter, so this needs to be done here
+        if let Some(t) = &callee_sign.var_arg {
+            for arg in args.iter().skip(callee_sign.args.len()) {
+                builder = arg.compile(builder, expr_types)?;
+                if !builder.check_and_fix_type_of_stack_top(&t) {
+                    return Err(CompilationError::TypeError {
+                        ast_id: arg.get_id().into(),
+                        actual: expr_types.get(&arg.get_id()).unwrap().clone(),
+                        expected: t.clone(),
+                    });
+                }
+            }
+        }
+        assert!(
+            builder.stack_info.len() == old_builder.stack_info.len() + args.len(),
+            "Stack has the wrong amount of arguments"
+        );
+        let n_var_args = if callee_sign.var_arg.is_some() {
+            Some(args.len() - callee_sign.args.len())
+        } else {
+            None
+        };
+        if let Some(n) = n_var_args {
+            builder.push_primitive_to_stack(n.into(), *id);
+        }
+        builder.text.push_back(opcode);
+        builder.create_value_in_memory(&callee_sign.result.concrete_type().unwrap(), *id);
+        builder.collapse_scope();
+        Ok(builder)
+    }
+}
+
+impl Compilable for Let {
+    fn compile(
+        &self,
+        mut builder: ByteCodeBuilder,
+        expr_types: &TypeIndex,
+    ) -> Result<ByteCodeBuilder> {
+        let Let {
+            id,
+            symbol_name,
+            value_expr,
+        } = self;
+
+        let old_builder = builder.clone();
+        builder = value_expr.compile(builder, expr_types)?;
+        assert_stack_grew_by_one(*id, &old_builder, &builder);
+        builder.add_symbol_for_stack_top(symbol_name);
+        Ok(builder)
+    }
+}
+
+impl Compilable for StrLit {
+    fn compile(&self, mut builder: ByteCodeBuilder, _: &TypeIndex) -> Result<ByteCodeBuilder> {
+        let StrLit(id, val) = self;
+        builder.add_to_datasection_and_push_ref(Value::Str(val.clone()), *id);
+        Ok(builder)
+    }
+}
+
+impl Compilable for Symbol {
+    fn compile(
+        &self,
+        mut builder: ByteCodeBuilder,
+        expr_types: &TypeIndex,
+    ) -> Result<ByteCodeBuilder> {
+        let Symbol(ast_id, name) = self;
+        map_to_symbol_not_found(builder.copy_symbol_target_to_stack_top(name), *ast_id, name)?;
+        Ok(builder)
+    }
+}
+
+impl Compilable for IntLit {
+    fn compile(
+        &self,
+        mut builder: ByteCodeBuilder,
+        expr_types: &TypeIndex,
+    ) -> Result<ByteCodeBuilder> {
+        let IntLit(id, val) = self;
+        builder.push_primitive_to_stack(CopyValue::Int(*val), *id);
+        Ok(builder)
     }
 }
 

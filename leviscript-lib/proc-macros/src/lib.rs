@@ -1,4 +1,5 @@
 use proc_macro::TokenStream;
+mod ast_node;
 mod opcode;
 
 /// Used on the OpCode enum.
@@ -28,4 +29,18 @@ mod opcode;
 #[proc_macro_derive(OpCode)]
 pub fn convert(tokens: TokenStream) -> TokenStream {
     opcode::opcode_impl(tokens)
+}
+
+/// Implements the `[leviscript-lib::core::AstNode]` Trait
+///
+/// If put on an enum, that enum must only contain variants with a single unnamed field, and that
+/// field must implement ast-node.
+/// If put on a struct with named fields, the struct must contain a field id:usize, and if put on a
+/// struct with unnamed fields, the first field must be a usize and will be used as id field.
+/// fields that hold child nodes must be anotated with `#[child]` if they have a single element, or
+/// `#[children]` if they implement Iterator over child nodes. That nodes must implement AstNode
+/// and Into<AstNodeRef>
+#[proc_macro_derive(AstNode, attributes(child, children))]
+pub fn derive_ast_note(tokens: TokenStream) -> TokenStream {
+    ast_node::ast_node_impl(tokens)
 }

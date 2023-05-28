@@ -3,7 +3,7 @@ use clap::Parser;
 
 use leviscript_lib::compiler::Compilable;
 use leviscript_lib::parser::{PestErrVariant, PestError, PestParser, Span};
-use leviscript_lib::type_inference::{infer_ast_types, inference_start};
+use leviscript_lib::type_inference::{inference_start, TypeInferable};
 use leviscript_lib::{core::*, parser, vm};
 
 use std::path::PathBuf;
@@ -58,7 +58,7 @@ fn main() -> Result<()> {
     }
 
     let (def_env, def_t_idx) = inference_start();
-    let (_, type_index) = match infer_ast_types(&ast, def_env, def_t_idx) {
+    let (_, type_index) = match ast.infer_types(def_env, def_t_idx) {
         Ok(x) => x,
         Err(e) => exit_with_error(&e.to_string(), e.get_ast_id(), &spans, &file_name),
     };

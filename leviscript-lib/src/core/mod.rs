@@ -23,3 +23,5 @@ pub use types::*;
 
 mod heap;
 pub use heap::*;
+
+pub mod ast_macros;
