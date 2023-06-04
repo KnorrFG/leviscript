@@ -40,13 +40,21 @@ pub enum Error {
 
     #[error("Undefined Symbol {1}")]
     UndefinedSymbol(usize, String),
+
+    #[error("For now, unused variables are forbidden: {1}")]
+    UnusedVar(usize, String),
+
+    #[error("Is not Callable")]
+    CallingNonCallable(usize),
 }
 
 impl Error {
     pub fn get_ast_id(&self) -> usize {
         match self {
             Self::NotCallable(id) => *id,
+            Self::CallingNonCallable(id) => *id,
             Self::UndefinedSymbol(id, ..) => *id,
+            Self::UnusedVar(id, ..) => *id,
         }
     }
 }
@@ -76,11 +84,118 @@ impl TypeInferable for Block {
 impl TypeInferable for FnFragment {
     fn infer_types(
         &self,
-        _env: Environment,
-        _type_idx: TypeIndex,
+        mut env: Environment,
+        mut type_idx: TypeIndex,
     ) -> Result<(Environment, TypeIndex)> {
-        todo!();
+        let mut known_types = vec![None; self.args.len()];
+        // iter body and look for calls that give away the type of our arguments
+        for node in self.body.iter() {
+            if let AstNodeRef::Call(Call {
+                callee,
+                args: call_args,
+                ..
+            }) = node
+            {
+                let callee_id = match callee.as_ref() {
+                    Expr::Symbol(Symbol(_, callee_name)) => {
+                        env.find_entry(callee_name).expect("can't find callee type")
+                    }
+                    _ => panic!("not supported yet"),
+                };
+                let indices = find_matching_indices(&self.args, call_args);
+                let DataType::Callable(_, callee_sign) = type_idx.get(&callee_id).unwrap()
+                else { return Err(Error::CallingNonCallable((*callee_id).into())) };
+                for (a_i, ca_i) in indices {
+                    let ca_t = callee_sign.get_nth_arg(ca_i).unwrap();
+                    if let Some(t) = ca_t.concrete_type() {
+                        known_types[a_i] = Some(t.clone());
+                    } else {
+                        panic!("For now, this doesn't work");
+                    }
+                }
+            }
+        }
+
+        // insert argument types into env and type index, which is needed when infering the body
+        // type
+        let mut env_for_body = env.clone();
+        let mut ti_for_body = type_idx.clone();
+        for (arg_def, t) in self.args.iter().zip(known_types) {
+            let actual_type = if let Some(t) = t {
+                t.clone()
+            } else {
+                return Err(Error::UnusedVar(
+                    arg_def.get_id().into(),
+                    arg_def.name.clone(),
+                ));
+            };
+            ti_for_body.insert(arg_def.get_id(), actual_type);
+            env_for_body.add_entry(arg_def.name.clone(), arg_def.get_id());
+        }
+
+        // find out the result type
+        (_, ti_for_body) = self.body.infer_types(env_for_body, ti_for_body)?;
+        let res_type = ti_for_body.get(&self.body.get_id()).unwrap();
+
+        // put own type into type_idx
+        let arg_type_vec = self
+            .args
+            .iter()
+            .map(|a| ti_for_body.get(&a.get_id()).unwrap().clone().into())
+            .collect();
+
+        let my_type = DataType::Callable(
+            CallableType::FnFragment,
+            Box::new(
+                Signature::new()
+                    .args(arg_type_vec)
+                    .result(res_type.clone().into()),
+            ),
+        );
+        type_idx.insert(self.get_id(), my_type);
+        Ok((env, type_idx))
     }
+}
+
+/// for each symbol in the call args that is one of the arguments, it returns a mapping from
+/// arg_name index to call_args index
+fn find_matching_indices(arg_names: &[ArgDef], call_args: &[Expr]) -> Vec<(usize, usize)> {
+    let mut res = vec![];
+    for (ca_i, ca) in call_args.iter().enumerate() {
+        if let Expr::Symbol(Symbol(_, call_arg_name)) = ca {
+            for (an_i, an) in arg_names.iter().enumerate() {
+                if call_arg_name == &an.name {
+                    res.push((an_i, ca_i));
+                }
+            }
+        }
+    }
+    res
+}
+
+#[cfg(test)]
+#[test]
+fn test_find_matching_indices() {
+    let searched_names = [
+        ArgDef {
+            id: 0,
+            name: "foo".into(),
+        },
+        ArgDef {
+            id: 0,
+            name: "bar".into(),
+        },
+    ];
+    let search_space = [Expr::IntLit(IntLit(0, 1))];
+    let res = find_matching_indices(&searched_names, &search_space);
+    assert_eq!(Vec::<(usize, usize)>::new(), res);
+
+    let search_space = [
+        Expr::IntLit(IntLit(0, 1)),
+        Expr::Symbol(Symbol(0, "foo".into())),
+    ];
+    let res = find_matching_indices(&searched_names, &search_space);
+    assert_eq!(vec![(0, 1)], res);
 }
 
 impl TypeInferable for Call {

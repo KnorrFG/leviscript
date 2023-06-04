@@ -61,14 +61,23 @@ macro_rules! define_ast_node_ref {
                 }
             }
         )*
-            impl<'a> Deref for AstNodeRef<'a> {
-                type Target = dyn AstNode;
-                fn deref(&self) -> &Self::Target {
-                    match self {
-                        $(Self::$types(x) => *x,)*
-                    }
+
+        impl<'a> Deref for AstNodeRef<'a> {
+            type Target = dyn AstNode;
+            fn deref(&self) -> &Self::Target {
+                match self {
+                    $(Self::$types(x) => *x,)*
                 }
             }
+        }
+
+        impl<'a> AstNodeRef<'a> {
+            fn iter(&self) -> Box<dyn Iterator<Item = AstNodeRef<'a>> + 'a> {
+                match self {
+                    $(Self::$types(x) => x.iter(),)*
+                }
+            }
+        }
     };
 }
 pub(crate) use define_ast_node_ref;

@@ -86,9 +86,20 @@ fn parse_fragment_def<'a>(pair: Pair<'a>, span_vec: &mut SpanVec<'a>) -> ParseRe
 
     let mut children: Vec<Pair> = pair.into_inner().collect();
     let body = parse_expression(children.pop().unwrap(), span_vec)?;
+    let args = children
+        .iter()
+        .map(|a| {
+            let res = ArgDef {
+                id: span_vec.len(),
+                name: a.as_str().into(),
+            };
+            span_vec.push(a.as_span());
+            res
+        })
+        .collect();
     Ok(FnFragment {
         id,
-        arg_names: to_str_vec(children),
+        args,
         body: Box::new(body),
     })
 }

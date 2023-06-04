@@ -90,6 +90,7 @@ impl ByteCodeBuilder {
         self.symbol_table.add_entry(alias.into(), info.clone());
         Ok(())
     }
+
     /// adds a value to the datasection, and pushes an Instruction to put a ref to that value onto the stack
     pub fn add_to_datasection_and_push_ref(&mut self, val: ComptimeValue, ast_id: usize) {
         self.data.push_back(val);
@@ -135,13 +136,6 @@ impl ByteCodeBuilder {
     }
 
     /// removes the n topmost entries from the stack_info.
-    ///
-    /// If gen_text is set to true, it will generate pop and pop_free instructions,
-    /// depending on whether the stack entry is an owning reference or not.
-    /// Having this option is useful, because sometimes you want those pops, e.g. for the
-    /// implementation of stuff that has Scopes (e.g Expr::Call), and sometimes you dont,
-    /// if you just update the stack info to account for changes that are done by OpCodes, like
-    /// StrLit
     pub fn pop_stack_entries(&mut self, n: usize) {
         for _ in 0..n {
             let entry = self
@@ -306,8 +300,8 @@ impl DataTypeInfo {
     /// If this is an owning heap ref, set it to disowned, otherwise panic
     pub fn disown(&mut self) {
         if let DataTypeInfo::HeapTypeInfo {
-            dtype,
             owner_idx: owner_idx @ Owner::Me,
+            ..
         } = self
         {
             *owner_idx = Owner::Disowned;

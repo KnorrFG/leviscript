@@ -1,6 +1,7 @@
 //! Contains the AST types. All anonymous structs and variants start with a usize, which is their
 //! ID. The Id refers to the index in the Span-vec that is returned together with the ast
 
+use std::iter;
 use std::ops::Deref;
 
 use serde::{Deserialize, Serialize};
@@ -14,8 +15,11 @@ use proc_macros::AstNode;
 /// represents stuff that works with all AST-Nodes
 pub trait AstNode {
     fn get_id(&self) -> EnvironmentIdentifier;
-    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = AstNodeRef<'a>> + '_>;
+    fn children(&self) -> Box<dyn Iterator<Item = AstNodeRef> + '_>;
     fn get_node_ref(&self) -> AstNodeRef;
+    fn iter(&self) -> Box<dyn Iterator<Item = AstNodeRef> + '_> {
+        Box::new(iter::once(self.get_node_ref()).chain(self.children().flat_map(|c| c.iter())))
+    }
 }
 
 /// represents multiple phrases that are executed one after another
@@ -59,26 +63,33 @@ pub struct Call {
 #[derive(Debug, Serialize, Deserialize, Clone, AstNode)]
 pub struct FnFragment {
     pub id: usize,
-    pub arg_names: Vec<String>,
+    #[children]
+    pub args: Vec<ArgDef>,
 
     #[child]
     pub body: Box<Expr>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, AstNode)]
+pub struct ArgDef {
+    pub id: usize,
+    pub name: String,
+}
+
 mk_enum_node! { Expr, StrLit, Symbol, IntLit, Let, Call, FnFragment, Block}
 
 define_ast_node_ref! {
-    Block, Phrase, StrLit, Symbol, IntLit, Let, Call, FnFragment, Expr,
+    Block, Phrase, StrLit, Symbol, IntLit, Let, Call, FnFragment, Expr, ArgDef,
 }
 
 impl<'a> AstNodeRef<'a> {
-    pub fn walk<F, E>(self, f: F) -> Result<(), E>
+    pub fn walk<F, E>(self, f: &mut F) -> Result<(), E>
     where
-        F: Fn(AstNodeRef) -> Result<(), E>,
+        F: FnMut(AstNodeRef) -> Result<(), E>,
     {
         f(self)?;
         for child in self.children() {
-            child.walk(&f)?;
+            child.walk(f)?;
         }
         Ok(())
     }

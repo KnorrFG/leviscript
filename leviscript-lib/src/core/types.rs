@@ -2,7 +2,7 @@
 
 use super::CopyValue;
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
 /// Represents TypeInformation at compile time
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -134,6 +134,16 @@ impl Signature {
         } else {
             // when there are no var args, the values are passing, if there are no more.
             iter.count() == 0
+        }
+    }
+
+    pub fn get_nth_arg(&self, n: usize) -> Option<&TypeSet> {
+        if n < self.args.len() {
+            Some(&self.args[n])
+        } else {
+            // if we're here the result is the type of the vararg, if a vararg exists, otherwise
+            // none. And that is the same logic as the following line
+            self.var_arg.as_ref()
         }
     }
 }
