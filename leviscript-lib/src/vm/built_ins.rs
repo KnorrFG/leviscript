@@ -64,7 +64,7 @@ pub fn opcode(f_name: &str) -> Option<OpCode> {
 
 pub unsafe fn wrapper_0_var_ret<R, T1>(
     f: unsafe fn(Vec<T1>) -> Result<R>,
-    f_name: &str,
+    _: &str,
     mem: &mut Memory,
 ) -> Result<()>
 where
@@ -90,7 +90,7 @@ where
 
 pub unsafe fn wrapper_1_var<T1, T2>(
     f: unsafe fn(T1, Vec<T2>) -> Result<()>,
-    f_name: &str,
+    _: &str,
     mem: &mut Memory,
 ) -> Result<()>
 where
